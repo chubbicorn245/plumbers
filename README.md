@@ -137,7 +137,10 @@ art/*.svg                   previews of the variants
 Only wallets that **sent an Ethereum mainnet transaction before November
 2021** can mint. A contract can't read mainnet history (least of all from
 another chain), so the check happens off-chain and is attested with a
-signed voucher:
+signed voucher. **The full mechanism — what gets signed, how the contract
+verifies it, the security properties, and the trust model — is documented
+in [docs/voucher-eligibility.md](docs/voucher-eligibility.md).** The short
+version:
 
 1. **Check:** a wallet qualifies iff its nonce at mainnet block
    `13527858` — the last block before 2021-11-01 00:00 UTC — is nonzero.
@@ -247,12 +250,25 @@ what's in that file.
 
 ### Before a real deployment
 
-- Set `MAX_SUPPLY` (collection size), `WALLET_LIMIT` (max tokens per
-  address, currently 3 total; each `mint(uint256,bytes)` call takes 1-3),
-  and `MINT_PRICE` (currently 0.0069 ETH per token) in `ArtPlumber.sol`.
-- Generate a dedicated eligibility signer key and pick the payout
-  address, then pass both as constructor arguments — double-check them;
-  they're immutable.
+Two of the constructor arguments are **immutable decisions** — get them
+right once, there is no owner and no second chance short of redeploying:
+
+- [ ] **Generate the eligibility signer key** (`cast wallet new`) and
+      store the private key somewhere real (secret manager / deployment
+      platform env, not a laptop `.env`) — it signs every voucher and
+      can't be rotated.
+- [ ] **Pick the payout address** — `withdraw()` can only ever send the
+      mint proceeds there.
+- [ ] **Confirm the constants** in `ArtPlumber.sol`: `MAX_SUPPLY`
+      (currently 1024 with an "adjust before deploying" note — this is
+      the moment to lock it), `WALLET_LIMIT` (3 total per wallet; each
+      `mint(uint256,bytes)` call takes 1-3), and `MINT_PRICE`
+      (0.0069 ETH per token).
+- [ ] **Testnet dry run** — the sections above walk the exact Robinhood
+      testnet flow: faucet → deploy → verify on Blockscout → mint with a
+      real voucher. Cheap insurance before anything real.
+
+Also worth knowing:
 - Marketplace compatibility: `tokenURI` returns the standard
   `data:application/json;base64,` URI with a base64 SVG image — the
   documented OpenSea on-chain metadata format (same pattern as
