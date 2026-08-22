@@ -118,6 +118,13 @@ interface IERC721Receiver {
 contract ArtPlumber is ERC721 {
     using ArtPlumberRenderer for ArtPlumberRenderer.Traits;
 
+    /// @notice On-chain forever, readable by anyone, shown on the verified
+    ///         contract's Read tab. Mint accordingly.
+    string public constant DISCLAIMER =
+        "Art Plumbers have no intrinsic value and carry no expectation of financial return. "
+        "There is no team and there is no roadmap. They are completely useless and exist "
+        "for entertainment purposes only.";
+
     uint256 public constant MAX_SUPPLY = 1024; // adjust before deploying
 
     /// @notice Max mints per wallet, total across all transactions. A

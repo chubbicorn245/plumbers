@@ -272,6 +272,14 @@ contract ArtPlumberTest {
         require(nft.totalSupply() == 3, "supply unchanged by failed mints");
     }
 
+    function test_DisclaimerOnchain() public view {
+        string memory d = nft.DISCLAIMER();
+        require(count(d, "no intrinsic value") == 1, "no value");
+        require(count(d, "no expectation of financial return") == 1, "no return");
+        require(count(d, "no team") == 1 && count(d, "no roadmap") == 1, "no team/roadmap");
+        require(count(d, "entertainment purposes only") == 1, "entertainment only");
+    }
+
     function test_TokenURIShape() public {
         uint256 id = nft.mint{value: price}(1, voucher(address(this)));
         string memory uri = nft.tokenURI(id);
