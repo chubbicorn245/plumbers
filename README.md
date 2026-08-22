@@ -132,16 +132,41 @@ scripts/gallery.py          builds art/gallery.html with simulated mints
 art/*.svg                   previews of the variants
 ```
 
+## Mint eligibility
+
+Only wallets that **sent an Ethereum mainnet transaction before November
+2021** can mint. A contract can't read mainnet history (least of all from
+another chain), so the check happens off-chain and is attested with a
+signed voucher:
+
+1. **Check:** a wallet qualifies iff its nonce at mainnet block
+   `13527858` — the last block before 2021-11-01 00:00 UTC — is nonzero.
+   One `eth_getTransactionCount` call against an archive-capable RPC.
+2. **Sign:** a backend holding the `signer` key signs an EIP-712 voucher
+   (domain `{name: "Art Plumber", version: "1", chainId, contract}`,
+   message `MintVoucher(address wallet)`). `voucherDigest(wallet)` on the
+   contract returns the exact digest; standard `signTypedData` matches it.
+3. **Mint:** `mint(signature)` verifies the voucher with `ecrecover`
+   (no new dependencies). The voucher is bound to one wallet, this chain,
+   and this contract — it can't be borrowed or replayed — and stays
+   reusable by its wallet until `WALLET_LIMIT` is hit, which the contract
+   enforces regardless.
+
+The `signer` address is an immutable constructor argument: no owner, no
+rotation. If the key is compromised or lost the contract must be
+redeployed, so keep it in a secret manager.
+
 ## Build, test, deploy
 
 ```sh
 forge build
 forge test
 
-# local dry run
+# local dry run (sign a voucher for the minter, then mint with it)
 anvil &
-forge create src/ArtPlumber.sol:ArtPlumber --private-key <key> --broadcast
-cast send <addr> "mint()" --private-key <key>
+forge create src/ArtPlumber.sol:ArtPlumber --private-key <deploy-key> --broadcast \
+  --constructor-args <signer-address>
+cast send <addr> "mint(bytes)" <voucher-signature> --private-key <minter-key>
 cast call <addr> "tokenURI(uint256)(string)" 1
 ```
 
@@ -151,8 +176,10 @@ Both contracts are dependency-free, so you can also paste
 Before a real deployment:
 
 - Set `MAX_SUPPLY` (collection size) and `WALLET_LIMIT` (max mints per
-  address, currently 3; each `mint()` call is one token per transaction)
-  in `ArtPlumber.sol`.
+  address, currently 3; each `mint(bytes)` call is one token per
+  transaction) in `ArtPlumber.sol`.
+- Generate a dedicated eligibility signer key and pass its address as the
+  constructor argument — double-check it; it's immutable.
 - Marketplace compatibility: `tokenURI` returns the standard
   `data:application/json;base64,` URI with a base64 SVG image — the
   documented OpenSea on-chain metadata format (same pattern as

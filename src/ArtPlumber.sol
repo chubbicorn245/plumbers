@@ -106,6 +106,15 @@ interface IERC721Receiver {
 ///         pulled. Matching colors between parts are the rare pulls; see
 ///         ArtPlumberRenderer for the exact odds and which seed nibble
 ///         determines which part's color.
+///
+///         ELIGIBILITY: only wallets that sent an Ethereum mainnet
+///         transaction before November 2021 can mint. A contract can't
+///         read mainnet history (least of all from another chain), so the
+///         check happens off-chain - nonce > 0 at mainnet block 13527858,
+///         the last block before 2021-11-01 00:00 UTC - and is attested
+///         with an EIP-712 voucher signed by `signer`. The voucher is
+///         bound to one wallet, this chain, and this contract, so it
+///         can't be borrowed or replayed elsewhere.
 contract ArtPlumber is ERC721 {
     using ArtPlumberRenderer for ArtPlumberRenderer.Traits;
 
@@ -116,6 +125,21 @@ contract ArtPlumber is ERC721 {
     ///         address can ever mint. (Determined hunters can still use
     ///         multiple wallets - this is friction, not a wall.)
     uint256 public constant WALLET_LIMIT = 3;
+
+    /// @notice Address whose EIP-712 vouchers grant mint eligibility.
+    ///         Immutable: no owner, no rotation - a compromised or lost
+    ///         signer key means redeploying.
+    address public immutable signer;
+
+    /// @dev Fixed at deploy (chain fork edge case accepted for simplicity).
+    bytes32 private immutable DOMAIN_SEPARATOR;
+
+    bytes32 private constant VOUCHER_TYPEHASH = keccak256("MintVoucher(address wallet)");
+
+    /// @dev secp256k1 half curve order: reject high-s signatures (EIP-2)
+    ///      so a third party can't republish a malleated voucher.
+    uint256 private constant HALF_CURVE_ORDER =
+        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
     uint256 public totalSupply;
 
@@ -128,20 +152,65 @@ contract ArtPlumber is ERC721 {
     ///         ArtPlumberRenderer.traitsOf for the slot <-> nibble map).
     mapping(uint256 => bytes32) public seedOf;
 
-    constructor() ERC721("Art Plumber", "PLMBR") {}
+    constructor(address signer_) ERC721("Art Plumber", "PLMBR") {
+        require(signer_ != address(0), "ZERO_SIGNER");
+        signer = signer_;
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(bytes("Art Plumber")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    /// @notice The EIP-712 digest `signer` must sign to vouch for `wallet`.
+    ///         Domain: {name: "Art Plumber", version: "1", chainId, this
+    ///         contract}; message: MintVoucher(address wallet). Standard
+    ///         typed-data signing (viem signTypedData / ethers signTypedData)
+    ///         produces a matching signature.
+    function voucherDigest(address wallet) public view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                "\x19\x01", DOMAIN_SEPARATOR, keccak256(abi.encode(VOUCHER_TYPEHASH, wallet))
+            )
+        );
+    }
 
     /// @notice Mint the next token. The seed - and therefore every color
     ///         and the plunger loadout - is fixed here and can never change.
+    /// @param  signature 65-byte EIP-712 voucher (r||s||v) for msg.sender,
+    ///         signed by `signer`. Reusable by the same wallet until it
+    ///         hits WALLET_LIMIT; useless to anyone else.
     /// @dev    prevrandao + minter + id keeps the roll unpredictable enough
     ///         for a fun hunt. (On some L2s prevrandao is weak; use a
     ///         commit-reveal or VRF if real value rides on the odds.)
-    function mint() external returns (uint256 id) {
+    function mint(bytes calldata signature) external returns (uint256 id) {
         require(mintedBy[msg.sender] < WALLET_LIMIT, "WALLET_LIMIT");
+        require(_isValidVoucher(msg.sender, signature), "NOT_ELIGIBLE");
         mintedBy[msg.sender]++;
         id = ++totalSupply;
         require(id <= MAX_SUPPLY, "SOLD_OUT");
         seedOf[id] = keccak256(abi.encodePacked(block.prevrandao, msg.sender, id));
         _mint(msg.sender, id);
+    }
+
+    function _isValidVoucher(address wallet, bytes calldata signature)
+        internal
+        view
+        returns (bool)
+    {
+        if (signature.length != 65) return false;
+        bytes32 r = bytes32(signature[0:32]);
+        bytes32 s = bytes32(signature[32:64]);
+        uint8 v = uint8(signature[64]);
+        if (uint256(s) > HALF_CURVE_ORDER) return false;
+        address recovered = ecrecover(voucherDigest(wallet), v, r, s);
+        return recovered != address(0) && recovered == signer;
     }
 
     /// @notice A token's rolled traits: the six slot colors (palette
