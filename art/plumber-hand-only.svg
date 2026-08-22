@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+<!-- BACKGROUND (fixed) -->
+<rect width="32" height="32" fill="#000000"/>
+<!-- BODY: suit + boots color slots, then fixed skin/face/belt + shading -->
+<path fill="#383982" d="M13 20h5v1h-5zM11 21h9v1h-9zM10 22h12v2h-12zM10 24h9v1h-9zM10 25h2v1h-2zM12 26h7v2h-7zM12 28h3v1h-3zM16 28h3v1h-3zM12 29h2v1h-2zM16 29h2v1h-2z"/><path fill="#2e2423" d="M12 30h2v1h-2zM16 30h2v1h-2zM12 31h3v1h-3zM16 31h3v1h-3z"/><path fill="#d8b18a" d="M13 14h1v2h-1zM12 16h1v2h-1zM13 18h1v1h-1zM14 19h1v1h-1z"/><path fill="#eec399" d="M14 14h3v2h-3zM13 16h1v1h-1zM15 16h2v1h-2zM13 17h4v1h-4zM14 18h1v1h-1zM15 19h1v1h-1zM22 22h1v2h-1zM10 26h2v1h-2z"/><path fill="#fcd1a7" d="M17 14h1v2h-1zM17 17h1v2h-1zM16 19h1v1h-1z"/><path fill="#3e3429" d="M12 25h7v1h-7z"/><path fill="#000000" d="M14 16h1v1h-1zM15 18h2v1h-2z"/><path fill="#000" opacity=".12" d="M13 20h1v1h-1zM11 21h2v1h-2zM10 22h1v4h-1zM12 23h1v2h-1zM12 26h1v4h-1zM15 27h1v1h-1zM16 28h1v2h-1z"/><path fill="#000" opacity=".28" d="M12 30h2v1h-2zM16 30h2v1h-2z"/><path fill="#000" opacity=".4" d="M15 20h1v5h-1z"/>
+<!-- HELD PLUNGER (presence slot): handle in his hand + its sucker -->
+<path fill="#3e3429" d="M22 19h1v3h-1zM22 24h1v4h-1z"/><path fill="#c0744a" d="M20 16h5v1h-5zM21 17h3v1h-3zM22 18h1v1h-1z"/><path fill="#000" opacity=".1" d="M20 16h1v1h-1zM21 17h1v1h-1z"/><path fill="#fff" opacity=".08" d="M24 16h1v1h-1zM23 17h1v1h-1zM22 18h1v1h-1z"/>
+</svg>
