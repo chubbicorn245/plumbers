@@ -58,6 +58,39 @@ stick matches only count when both parts are actually on the art — so a
 Perfect Plumber is always a Double. When the head plunger is present its
 sucker covers the frog's ear bumps; otherwise the ears show.
 
+### How randomness is determined (and why the hunt rewards skill)
+
+There is no oracle and no off-chain randomness. The seed is computed
+on-chain at mint, from three public ingredients:
+
+```solidity
+seedOf[id] = keccak256(abi.encodePacked(block.prevrandao, msg.sender, id));
+```
+
+- `block.prevrandao` — a value the chain exposes each block,
+- `msg.sender` — the minter's address,
+- `id` — the sequential token id being minted.
+
+This is **not casino-grade randomness, by design**. Everything that goes
+into the seed is public, so a skilled hunter can compute rolls before
+minting:
+
+- On Ethereum L1, `prevrandao` is fixed once the block is being built, so
+  a hunter can simulate their mint each block and only send the
+  transaction when the roll is good.
+- On Arbitrum-lineage L2s (including Robinhood Chain), `prevrandao` is a
+  constant — the seed reduces to `keccak256(you, tokenId)`. That means
+  you can precompute, for your own address, **which future token ids roll
+  matches**, then watch `totalSupply` and race to land your mint on
+  exactly that id.
+
+We consider that the game: the casual minter gets a surprise pull; the
+hunter who reads the contract, precomputes their ids, and wins the timing
+race earns their Perfect Plumber. Skill is rewarded, and nothing is
+hidden — everyone has access to the same math. (If a future drop ever
+needs snipe-proof odds instead, the fix is a commit-reveal mint or a VRF;
+`ArtPlumber.mint()` is the only function that would change.)
+
 ### The palette
 
 | # | Name | Hex | | # | Name | Hex |

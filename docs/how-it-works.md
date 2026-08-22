@@ -13,11 +13,20 @@ Minting runs (in `ArtPlumber.mint()`):
 seedOf[id] = keccak256(abi.encodePacked(block.prevrandao, msg.sender, id));
 ```
 
-- `block.prevrandao` — randomness from the chain, unknown until the mint
-  block is built. This is why you can't pick your colors: you mint and see
-  what you pulled.
+- `block.prevrandao` — a per-block value from the chain. On Ethereum L1
+  it changes every block; on Arbitrum-lineage L2s (including Robinhood
+  Chain) it is a **constant**, so there the seed is effectively
+  `keccak256(minter, tokenId)`.
 - `msg.sender` — two people minting in the same block get different rolls.
 - `id` — one wallet minting twice in the same block gets different rolls.
+
+All three ingredients are public, so the roll is **predictable to anyone
+willing to do the work**: on L1 you can simulate your mint each block and
+only submit on a good roll; on constant-`prevrandao` L2s you can
+precompute which future token ids give your address a match and race to
+mint on exactly that id. This is intentional — the hunt rewards hunters
+who read the contract and win the timing race, and everyone has access
+to the same math. See "How randomness is determined" in the README.
 
 The seed is stored once and can never change. Anyone can read it:
 
