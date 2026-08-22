@@ -9,6 +9,20 @@ chain does.
 |---|---|---|---|---|
 | ![](art/plumber.svg) | ![](art/plumber-head-only.svg) | ![](art/plumber-hand-only.svg) | ![](art/plumber-plungerless.svg) | ![](art/plumber-perfect-match-example.svg) |
 
+## The base character
+
+**The frog is the base.** Every token is this exact same frog — same
+pose, same pixels — re-dressed by its mint seed: only the six slot colors
+and the plunger loadout vary. `art/plumber.svg` ("Original" above) shows
+the base in OG colors, which are palette indices 0–3: Clay suckers,
+Ash Brown sticks, Workwear Blue suit, Coal boots, Double plunger. The
+frog's skin greens, eye, mouth, and belt are part of the base and never
+change. The base pixel grids live in `scripts/build_svg.py`
+(`BODY_GRID` + `HEAD_GRID`); to change the base art, edit those grids,
+run the script, and copy the printed constants into
+`ArtPlumberRenderer.sol`. (A v1 human plumber preceded the frog and
+exists only in git history.)
+
 ## The on-chain color match hunt
 
 Every mint locks a random seed. That seed — and nothing else — decides the
