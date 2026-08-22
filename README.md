@@ -12,7 +12,10 @@ chain does.
 ## The on-chain color match hunt
 
 Every mint locks a random seed. That seed — and nothing else — decides the
-token's look. Seven nibbles (4-bit values) of the seed are read:
+token's look. **The full derivation — seed → nibbles → palette → SVG,
+plunger presence, and how to verify it with `cast` — is documented in
+[docs/how-it-works.md](docs/how-it-works.md).** The short version: seven
+nibbles (4-bit values) of the seed are read:
 
 | Seed nibble | Slot | What it determines |
 |---|---|---|
