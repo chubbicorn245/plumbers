@@ -111,7 +111,16 @@ contract ArtPlumber is ERC721 {
 
     uint256 public constant MAX_SUPPLY = 1024; // adjust before deploying
 
+    /// @notice Max mints per wallet. mint() is inherently one token per
+    ///         transaction; this additionally caps the total a single
+    ///         address can ever mint. (Determined hunters can still use
+    ///         multiple wallets - this is friction, not a wall.)
+    uint256 public constant WALLET_LIMIT = 3;
+
     uint256 public totalSupply;
+
+    /// @notice How many tokens each address has minted.
+    mapping(address => uint256) public mintedBy;
 
     /// @notice The mint seed of each token. The seed alone fully determines
     ///         the artwork: nibbles 0-5 index the shared 16-color palette,
@@ -127,6 +136,8 @@ contract ArtPlumber is ERC721 {
     ///         for a fun hunt. (On some L2s prevrandao is weak; use a
     ///         commit-reveal or VRF if real value rides on the odds.)
     function mint() external returns (uint256 id) {
+        require(mintedBy[msg.sender] < WALLET_LIMIT, "WALLET_LIMIT");
+        mintedBy[msg.sender]++;
         id = ++totalSupply;
         require(id <= MAX_SUPPLY, "SOLD_OUT");
         seedOf[id] = keccak256(abi.encodePacked(block.prevrandao, msg.sender, id));

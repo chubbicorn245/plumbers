@@ -121,6 +121,19 @@ contract ArtPlumberTest {
         require(eq(label(0xF), "None"), "none");
     }
 
+    function test_WalletLimit() public {
+        nft.mint();
+        nft.mint();
+        nft.mint();
+        require(nft.mintedBy(address(this)) == 3, "three minted");
+        try nft.mint() {
+            revert("4th mint should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
+        }
+        require(nft.totalSupply() == 3, "supply unchanged by failed mint");
+    }
+
     function test_TokenURIShape() public {
         uint256 id = nft.mint();
         string memory uri = nft.tokenURI(id);

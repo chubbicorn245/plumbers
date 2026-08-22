@@ -150,7 +150,13 @@ Both contracts are dependency-free, so you can also paste
 
 Before a real deployment:
 
-- Set `MAX_SUPPLY` in `ArtPlumber.sol` to your collection size.
+- Set `MAX_SUPPLY` (collection size) and `WALLET_LIMIT` (max mints per
+  address, currently 3; each `mint()` call is one token per transaction)
+  in `ArtPlumber.sol`.
+- Marketplace compatibility: `tokenURI` returns the standard
+  `data:application/json;base64,` URI with a base64 SVG image — the
+  documented OpenSea on-chain metadata format (same pattern as
+  Loot/Nouns), so the art renders there with no server.
 - The mint seed uses `block.prevrandao + minter + id`. That's fine for a
   fun hunt, but it is influenceable by validators/sequencers — if real
   value rides on the odds, switch to commit-reveal or VRF.
