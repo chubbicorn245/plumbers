@@ -86,10 +86,10 @@ if __name__ == "__main__":
     root = pathlib.Path(__file__).resolve().parent.parent
 
     showcase = [
-        ("The Original (OG colors, double plunger)", DEFAULTS, True, True),
-        ("Head Plunger Only", DEFAULTS, True, False),
-        ("Hand Plunger Only", DEFAULTS, False, True),
-        ("Plungerless (rarest loadout, 1/16)", DEFAULTS, False, False),
+        ("The Original Frog (OG colors, double plunger)", DEFAULTS, True, True),
+        ("Head Plunger Only (sucker covers the ears)", DEFAULTS, True, False),
+        ("Hand Plunger Only (ears out)", DEFAULTS, False, True),
+        ("Plungerless (ears out, rarest loadout 1/16)", DEFAULTS, False, False),
         ("Perfect Plumber example (suckers + sticks match)",
          dict(DEFAULTS, headSucker="e0a422", heldSucker="e0a422",
               headStick="1f8a8a", heldStick="1f8a8a", suit="7a3fa8", boots="23233a"),

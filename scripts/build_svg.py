@@ -1,66 +1,80 @@
 #!/usr/bin/env python3
-"""Build the Art Plumber SVG (and Solidity string constants) from the 32x32 pixel grid.
+"""Build the Art Plumber (frog) SVG and Solidity string constants.
 
-The grid below was extracted pixel-for-pixel from the source image
-(2026-08-21 16.31.14.jpg, 1280x1280 = 32x32 cells of 40px).
+BODY_GRID was extracted cell-for-cell from the source image
+(frog.webp, 1024x1024 = 24x24 cells of ~42.7px) via extract_grid.py.
+
+HEAD_GRID is the head plunger, drawn as a separate layer painted AFTER the
+body: when present, its sucker covers the frog's ear bumps (row 6); when
+absent, the ears show.
 
 Regions / color slots (the on-chain "color match hunt" traits):
   headStick   - the plunger stick he hangs from
-  headSucker  - the plunger sucker stuck on his head
+  headSucker  - the plunger sucker stuck on his head (covers the ears)
   heldStick   - the stick of the plunger he is holding
   heldSucker  - the sucker of the plunger he is holding
   suit        - the work suit
   boots       - the boots
 
-Presence slots: the head plunger and the held plunger can each be absent.
-The SVG is therefore built from three self-contained segments (head plunger,
-held plunger, body), each carrying its own shading overlays, so a segment
-can be dropped without leaving stray shading pixels.
+Presence slots: head plunger and held plunger can each be absent, so the
+SVG is three self-contained segments (body, head plunger, held plunger),
+each carrying its own shading overlays.
 
-Fixed (not part of the hunt): skin, face (eye/mouth), belt, background.
+Fixed (not part of the hunt): frog skin greens, eye, mouth, belt, background.
 
 Shading is applied as translucent black/white overlay pixels so every slot
 can be recolored with a single flat color and keep its pixel-art shading.
 """
 
-# Symbols: . bg | b stick/belt | c/d/e sucker light/dark/mid | f/g/h skin dark/mid/light
-#          i/j/k suit dark/mid/zipper | l/m boot dark/mid | E eye | M mouth
-GRID = [
-    "................................",  # 0
-    "................................",  # 1
-    "...............b................",  # 2
-    "...............b................",  # 3
-    "...............b................",  # 4
-    "...............b................",  # 5
-    "...............b................",  # 6
-    "...............b................",  # 7
-    "...............b................",  # 8
-    "...............b................",  # 9
-    "...............b................",  # 10
-    "...............c................",  # 11
-    "..............dec...............",  # 12
-    ".............deeec..............",  # 13
-    ".............fgggh..............",  # 14
-    ".............fgggh..............",  # 15
-    "............fgEgg...deeec.......",  # 16
-    "............fggggh...dec........",  # 17
-    ".............fgMMh....c.........",  # 18
-    "..............fgh.....b.........",  # 19
-    ".............ijkjj....b.........",  # 20
-    "...........iijjkjjjj..b.........",  # 21
-    "..........ijjjjkjjjjjjg.........",  # 22
-    "..........ijijjkjjjjjjg.........",  # 23
-    "..........ijijjkjjj...b.........",  # 24
-    "..........ijbbbbbbb...b.........",  # 25
-    "..........ggijjjjjj...b.........",  # 26
-    "............ijjijjj...b.........",  # 27
-    "............ijj.ijj.............",  # 28
-    "............ij..ij..............",  # 29
-    "............ll..ll..............",  # 30
-    "............mmm.mmm.............",  # 31
+import re
+
+N = 24  # grid size / viewBox
+
+# Body symbols:
+#   F/G/H frog green dark/mid/light | E eye | M mouth | B belt
+#   a/b/c/z suit base/shadow/light/zipper | g/m boot base/top
+#   o/l held stick base/dark | p/j/n held sucker dark/mid/light
+BODY_GRID = [
+    "........................",  # 0
+    "........................",  # 1
+    "........................",  # 2
+    "........................",  # 3
+    "........................",  # 4
+    "........................",  # 5
+    "..........F.H...........",  # 6  <- ear bumps (covered by head sucker)
+    ".........FGGGH..........",  # 7
+    ".........FEGG...pjjjn...",  # 8
+    ".........FMMMM...pjn....",  # 9
+    ".........FGGGH....n.....",  # 10
+    "..........FGH.....o.....",  # 11
+    ".........bazac....l.....",  # 12
+    ".......bbaazaacc..l.....",  # 13
+    "......baaaazaaaaccG.....",  # 14
+    "......babaazaacaaaG.....",  # 15
+    "......babaazaac...l.....",  # 16
+    "......baBBBBBBB...l.....",  # 17
+    "......GGbaacaac...o.....",  # 18
+    "........bacbaac...o.....",  # 19
+    "........bac.bac.........",  # 20
+    "........bc..bc..........",  # 21
+    "........mm..mm..........",  # 22
+    "........ggg.ggg.........",  # 23
 ]
 
-# Default palette = the original artwork's colors
+# Head plunger layer: S stick | P/J/N sucker dark/mid/light.
+# Row 6 overlaps the body's ear row on purpose - painted later, it covers
+# the ears exactly as a suction cup stuck on the head would.
+HEAD_GRID = [
+    "...........S............",  # 0
+    "...........S............",  # 1
+    "...........S............",  # 2
+    "...........S............",  # 3
+    "...........N............",  # 4
+    "..........PJN...........",  # 5
+    ".........PJJJN..........",  # 6
+]
+
+# Default slot colors = the shared on-chain palette's OG entries
 DEFAULTS = {
     "headStick": "3e3429",
     "headSucker": "c0744a",
@@ -70,68 +84,54 @@ DEFAULTS = {
     "boots": "2e2423",
 }
 FIXED = {
-    "skinDark": "d8b18a",
-    "skin": "eec399",
-    "skinLight": "fcd1a7",
-    "belt": "3e3429",
-    "face": "000000",
+    "skinDark": "58883f",
+    "skin": "639847",
+    "skinLight": "6ba34e",
+    "mouth": "a3663b",
+    "belt": "3b2d2d",
+    "eye": "000000",
     "bg": "000000",
 }
 
+# symbol -> (region, shade); shade '' | 'dark' | 'darker' | 'light'
+SYMBOLS = {
+    "F": ("skinDark", ""), "G": ("skin", ""), "H": ("skinLight", ""),
+    "E": ("eye", ""), "M": ("mouth", ""), "B": ("belt", ""),
+    "a": ("suit", ""), "b": ("suit", "dark"), "c": ("suit", "light"),
+    "z": ("suit", "darker"),
+    "g": ("boots", ""), "m": ("boots", "dark"),
+    "o": ("heldStick", ""), "l": ("heldStick", "dark"),
+    "p": ("heldSucker", "dark"), "j": ("heldSucker", ""), "n": ("heldSucker", "light"),
+    "S": ("headStick", ""),
+    "P": ("headSucker", "dark"), "J": ("headSucker", ""), "N": ("headSucker", "light"),
+}
 
-def classify(x, y, ch):
-    """Map a grid symbol at (x, y) to (region, shade). shade: '' | 'dark' | 'darker' | 'light'."""
-    if ch == ".":
-        return None
-    if ch == "b":
-        # the belt row also contains the held stick passing it at x=22
-        if y == 25 and x <= 18:
-            return ("belt", "")
-        return ("headStick", "") if x == 15 else ("heldStick", "")
-    if ch in "cde":
-        region = "headSucker" if y <= 13 else "heldSucker"
-        return (region, {"c": "light", "d": "dark", "e": ""}[ch])
-    if ch == "f":
-        return ("skinDark", "")
-    if ch == "g":
-        return ("skin", "")
-    if ch == "h":
-        return ("skinLight", "")
-    if ch in "ijk":
-        return ("suit", {"i": "dark", "j": "", "k": "darker"}[ch])
-    if ch == "l":
-        return ("boots", "dark")
-    if ch == "m":
-        return ("boots", "")
-    if ch in "EM":
-        return ("face", "")
-    raise ValueError(ch)
+# overlay strength per (region, shade), tuned to the source image's shades
+SHADE_OPS = {
+    ("suit", "dark"): ("000", ".12"),
+    ("suit", "darker"): ("000", ".4"),
+    ("suit", "light"): ("fff", ".04"),
+    ("boots", "dark"): ("000", ".28"),
+    ("heldStick", "dark"): ("000", ".2"),
+    ("heldSucker", "dark"): ("000", ".1"),
+    ("heldSucker", "light"): ("fff", ".08"),
+    ("headSucker", "dark"): ("000", ".1"),
+    ("headSucker", "light"): ("fff", ".08"),
+}
 
 
-def collect():
-    """regions[region] = pixel list; overlays[region] = {(color, opacity): pixels}."""
-    regions = {}
-    overlays = {}
-    # overlay strength per (region, shade) tuned to reproduce the original shades
-    dark_op = {
-        ("headSucker", "dark"): ".1", ("heldSucker", "dark"): ".1",
-        ("suit", "dark"): ".12", ("suit", "darker"): ".4",
-        ("boots", "dark"): ".28",
-    }
-    for y, row in enumerate(GRID):
+def collect(grid):
+    """regions[region] = pixel list; overlays[region] = {(color, op): pixels}."""
+    regions, overlays = {}, {}
+    for y, row in enumerate(grid):
         for x, ch in enumerate(row):
-            c = classify(x, y, ch)
-            if not c:
+            if ch == ".":
                 continue
-            region, shade = c
+            region, shade = SYMBOLS[ch]
             regions.setdefault(region, []).append((x, y))
-            if shade in ("dark", "darker"):
-                key = ("000", dark_op[(region, shade)])
-            elif shade == "light":
-                key = ("fff", ".08")
-            else:
-                continue
-            overlays.setdefault(region, {}).setdefault(key, []).append((x, y))
+            if (region, shade) in SHADE_OPS:
+                key = SHADE_OPS[(region, shade)]
+                overlays.setdefault(region, {}).setdefault(key, []).append((x, y))
     return regions, overlays
 
 
@@ -144,8 +144,7 @@ def to_path(pixels):
             runs[-1][2] += 1
         else:
             runs.append([x, y, 1])
-    # vertical merge: same x and w, consecutive y
-    merged = []  # (x, y, w, h)
+    merged = []  # (x, y, w, h) - vertical merge of identical runs
     for x, y, w in runs:
         for m in merged:
             if m[0] == x and m[2] == w and m[1] + m[3] == y:
@@ -160,13 +159,12 @@ def to_path(pixels):
 
 
 HEADER = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" '
+    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {N} {N}" '
     'shape-rendering="crispEdges">'
 )
 
 
 def overlay_paths(overlays, region_names):
-    """Combined translucent shading paths for a group of regions."""
     combined = {}
     for r in region_names:
         for key, px in overlays.get(r, {}).items():
@@ -178,27 +176,28 @@ def overlay_paths(overlays, region_names):
 
 
 def segments(colors):
-    """The three self-contained drawing segments. Each can be independently
-    included/omitted (that is the presence trait) without visual leftovers."""
-    regions, overlays = collect()
+    """Three self-contained drawing segments; the plunger ones are the
+    presence slots and can be omitted without visual leftovers."""
+    body_regions, body_overlays = collect(BODY_GRID)
+    head_regions, head_overlays = collect(HEAD_GRID)
+    body = (
+        f'<path fill="#{colors["suit"]}" d="{to_path(body_regions["suit"])}"/>'
+        f'<path fill="#{colors["boots"]}" d="{to_path(body_regions["boots"])}"/>'
+        + "".join(
+            f'<path fill="#{FIXED[n]}" d="{to_path(body_regions[n])}"/>'
+            for n in ["skinDark", "skin", "skinLight", "mouth", "belt", "eye"]
+        )
+        + overlay_paths(body_overlays, ["suit", "boots"])
+    )
     head = (
-        f'<path fill="#{colors["headStick"]}" d="{to_path(regions["headStick"])}"/>'
-        f'<path fill="#{colors["headSucker"]}" d="{to_path(regions["headSucker"])}"/>'
-        + overlay_paths(overlays, ["headStick", "headSucker"])
+        f'<path fill="#{colors["headStick"]}" d="{to_path(head_regions["headStick"])}"/>'
+        f'<path fill="#{colors["headSucker"]}" d="{to_path(head_regions["headSucker"])}"/>'
+        + overlay_paths(head_overlays, ["headStick", "headSucker"])
     )
     held = (
-        f'<path fill="#{colors["heldStick"]}" d="{to_path(regions["heldStick"])}"/>'
-        f'<path fill="#{colors["heldSucker"]}" d="{to_path(regions["heldSucker"])}"/>'
-        + overlay_paths(overlays, ["heldStick", "heldSucker"])
-    )
-    body = (
-        f'<path fill="#{colors["suit"]}" d="{to_path(regions["suit"])}"/>'
-        f'<path fill="#{colors["boots"]}" d="{to_path(regions["boots"])}"/>'
-        + "".join(
-            f'<path fill="#{FIXED[n]}" d="{to_path(regions[n])}"/>'
-            for n in ["skinDark", "skin", "skinLight", "belt", "face"]
-        )
-        + overlay_paths(overlays, ["suit", "boots"])
+        f'<path fill="#{colors["heldStick"]}" d="{to_path(body_regions["heldStick"])}"/>'
+        f'<path fill="#{colors["heldSucker"]}" d="{to_path(body_regions["heldSucker"])}"/>'
+        + overlay_paths(body_overlays, ["heldStick", "heldSucker"])
     )
     return head, held, body
 
@@ -208,13 +207,15 @@ def build(colors, head=True, held=True, comments=True):
     parts = [HEADER]
     if comments:
         parts.append("<!-- BACKGROUND (fixed) -->")
-    parts.append(f'<rect width="32" height="32" fill="#{FIXED["bg"]}"/>')
+    parts.append(f'<rect width="{N}" height="{N}" fill="#{FIXED["bg"]}"/>')
     if comments:
-        parts.append("<!-- BODY: suit + boots color slots, then fixed skin/face/belt + shading -->")
+        parts.append("<!-- BODY: suit + boots color slots, then fixed frog "
+                     "skin/eye/mouth/belt + shading (ears show at row 6) -->")
     parts.append(seg_body)
     if head:
         if comments:
-            parts.append("<!-- HEAD PLUNGER (presence slot): stick he hangs from + sucker on head -->")
+            parts.append("<!-- HEAD PLUNGER (presence slot): stick he hangs from + "
+                         "sucker on head; painted over the ears -->")
         parts.append(seg_head)
     if held:
         if comments:
@@ -230,7 +231,6 @@ if __name__ == "__main__":
     root = pathlib.Path(__file__).resolve().parent.parent
     (root / "art").mkdir(exist_ok=True)
 
-    # previews: original colors in all presence variants, plus a match example
     (root / "art" / "plumber.svg").write_text(build(DEFAULTS) + "\n")
     (root / "art" / "plumber-head-only.svg").write_text(build(DEFAULTS, held=False) + "\n")
     (root / "art" / "plumber-hand-only.svg").write_text(build(DEFAULTS, head=False) + "\n")
@@ -245,11 +245,9 @@ if __name__ == "__main__":
     ph = {s: f"@{s}@" for s in DEFAULTS}
     seg_head, seg_held, seg_body = segments(ph)
     print("// --- Solidity constants (generated by scripts/build_svg.py) ---")
-    print(f"// SVG_START:\n'{HEADER}<rect width=\"32\" height=\"32\" fill=\"#{FIXED['bg']}\"/>'")
-    for name, seg in (("HEAD", seg_head), ("HELD", seg_held), ("BODY", seg_body)):
+    print(f"// SVG_START:\n'{HEADER}<rect width=\"{N}\" height=\"{N}\" fill=\"#{FIXED['bg']}\"/>'")
+    for name, seg in (("BODY", seg_body), ("HEAD", seg_head), ("HELD", seg_held)):
         print(f"// {name} segment, split at color slots:")
-        import re
         for part in re.split(r"@(\w+)@", seg):
-            print(f"  '{part}'" if not part.isidentifier() or part not in DEFAULTS
-                  else f"  <color: {part}>")
+            print(f"  '{part}'" if part not in DEFAULTS else f"  <color: {part}>")
     print(f"\n// minified size, all segments: {len(build(DEFAULTS, comments=False))} bytes")

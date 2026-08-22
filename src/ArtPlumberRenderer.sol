@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 /// @title  ArtPlumberRenderer
 /// @notice Fully on-chain SVG + metadata renderer for the Art Plumber pixel
-///         character (32x32 grid, hangs from a plunger, holds a plunger).
+///         character (frog, 24x24 grid, hangs from a plunger, holds a plunger).
 ///
 ///         ================= THE COLOR MATCH HUNT =================
 ///         Six parts of the character are recolorable "color slots".
@@ -18,7 +18,7 @@ pragma solidity ^0.8.20;
 ///
 ///           slot        seed nibble   what it determines
 ///           ----------  -----------   -------------------------------------
-///           headSucker  nibble 0      color of plunger SUCKER on his head
+///           headSucker  nibble 0      color of plunger SUCKER on head (covers ears)
 ///           heldSucker  nibble 1      color of SUCKER of the held plunger
 ///           headStick   nibble 2      color of STICK he hangs from
 ///           heldStick   nibble 3      color of the OTHER STICK (held handle)
@@ -85,39 +85,39 @@ library ArtPlumberRenderer {
 
     /// @dev Opens the SVG, paints the black background, opens the suit fill.
     string private constant SVG_START =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges"><rect width="32" height="32" fill="#000000"/><path fill="#';
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" shape-rendering="crispEdges"><rect width="24" height="24" fill="#000000"/><path fill="#';
 
     /// @dev Opens one path fill; prefixes each optional plunger segment.
     string private constant OPEN = '<path fill="#';
 
     /// @dev WORK SUIT pixels (torso, arms, legs), then opens the boots fill.
     string private constant SUIT_PX =
-        '" d="M13 20h5v1h-5zM11 21h9v1h-9zM10 22h12v2h-12zM10 24h9v1h-9zM10 25h2v1h-2zM12 26h7v2h-7zM12 28h3v1h-3zM16 28h3v1h-3zM12 29h2v1h-2zM16 29h2v1h-2z"/><path fill="#';
+        '" d="M9 12h5v1h-5zM7 13h9v1h-9zM6 14h12v2h-12zM6 16h9v1h-9zM6 17h2v1h-2zM8 18h7v2h-7zM8 20h3v1h-3zM12 20h3v1h-3zM8 21h2v1h-2zM12 21h2v1h-2z"/><path fill="#';
 
     /// @dev BOOTS pixels, then the fixed art that is NOT part of the hunt:
     ///      skin (3 shades), belt, eye + mouth, and the body's translucent
     ///      shading overlays (suit folds, zipper, boot caps).
     string private constant BODY_FIXED_PX =
-        '" d="M12 30h2v1h-2zM16 30h2v1h-2zM12 31h3v1h-3zM16 31h3v1h-3z"/><path fill="#d8b18a" d="M13 14h1v2h-1zM12 16h1v2h-1zM13 18h1v1h-1zM14 19h1v1h-1z"/><path fill="#eec399" d="M14 14h3v2h-3zM13 16h1v1h-1zM15 16h2v1h-2zM13 17h4v1h-4zM14 18h1v1h-1zM15 19h1v1h-1zM22 22h1v2h-1zM10 26h2v1h-2z"/><path fill="#fcd1a7" d="M17 14h1v2h-1zM17 17h1v2h-1zM16 19h1v1h-1z"/><path fill="#3e3429" d="M12 25h7v1h-7z"/><path fill="#000000" d="M14 16h1v1h-1zM15 18h2v1h-2z"/><path fill="#000" opacity=".12" d="M13 20h1v1h-1zM11 21h2v1h-2zM10 22h1v4h-1zM12 23h1v2h-1zM12 26h1v4h-1zM15 27h1v1h-1zM16 28h1v2h-1z"/><path fill="#000" opacity=".28" d="M12 30h2v1h-2zM16 30h2v1h-2z"/><path fill="#000" opacity=".4" d="M15 20h1v5h-1z"/>';
+        '" d="M8 22h2v1h-2zM12 22h2v1h-2zM8 23h3v1h-3zM12 23h3v1h-3z"/><path fill="#58883f" d="M10 6h1v1h-1zM9 7h1v4h-1zM10 11h1v1h-1z"/><path fill="#639847" d="M10 7h3v1h-3zM11 8h2v1h-2zM10 10h3v1h-3zM11 11h1v1h-1zM18 14h1v2h-1zM6 18h2v1h-2z"/><path fill="#6ba34e" d="M12 6h1v1h-1zM13 7h1v1h-1zM13 10h1v1h-1zM12 11h1v1h-1z"/><path fill="#a3663b" d="M10 9h4v1h-4z"/><path fill="#3b2d2d" d="M8 17h7v1h-7z"/><path fill="#000000" d="M10 8h1v1h-1z"/><path fill="#000" opacity=".12" d="M9 12h1v1h-1zM7 13h2v1h-2zM6 14h1v4h-1zM8 15h1v2h-1zM8 18h1v4h-1zM11 19h1v1h-1zM12 20h1v2h-1z"/><path fill="#000" opacity=".28" d="M8 22h2v1h-2zM12 22h2v1h-2z"/><path fill="#000" opacity=".4" d="M11 12h1v5h-1z"/><path fill="#fff" opacity=".04" d="M13 12h1v1h-1zM14 13h2v1h-2zM16 14h2v1h-2zM14 15h1v2h-1zM11 18h1v1h-1zM14 18h1v3h-1zM10 19h1v2h-1zM9 21h1v1h-1zM13 21h1v1h-1z"/>';
 
-    /// @dev HEAD PLUNGER STICK pixels (the stick he hangs from, rows 2-10),
+    /// @dev HEAD PLUNGER STICK pixels (the stick he hangs from, rows 0-3),
     ///      then opens the head sucker fill.
-    string private constant HEAD_STICK_PX = '" d="M15 2h1v9h-1z"/><path fill="#';
+    string private constant HEAD_STICK_PX = '" d="M11 0h1v4h-1z"/><path fill="#';
 
-    /// @dev HEAD PLUNGER SUCKER pixels (rubber cup on his head) + the head
+    /// @dev HEAD PLUNGER SUCKER pixels (rubber cup on his head, covers the ear bumps) + the head
     ///      plunger's own shading overlays.
     string private constant HEAD_SUCKER_PX =
-        '" d="M15 11h1v1h-1zM14 12h3v1h-3zM13 13h5v1h-5z"/><path fill="#000" opacity=".1" d="M14 12h1v1h-1zM13 13h1v1h-1z"/><path fill="#fff" opacity=".08" d="M15 11h1v1h-1zM16 12h1v1h-1zM17 13h1v1h-1z"/>';
+        '" d="M11 4h1v1h-1zM10 5h3v1h-3zM9 6h5v1h-5z"/><path fill="#000" opacity=".1" d="M10 5h1v1h-1zM9 6h1v1h-1z"/><path fill="#fff" opacity=".08" d="M11 4h1v1h-1zM12 5h1v1h-1zM13 6h1v1h-1z"/>';
 
     /// @dev HELD PLUNGER STICK pixels (handle in his hand; the gap at rows
-    ///      22-23 is where his skin-colored hand grips it), then opens the
+    ///      14-15 is where his green hand grips it), then opens the
     ///      held sucker fill.
     string private constant HELD_STICK_PX =
-        '" d="M22 19h1v3h-1zM22 24h1v4h-1z"/><path fill="#';
+        '" d="M18 11h1v3h-1zM18 16h1v4h-1z"/><path fill="#';
 
     /// @dev HELD PLUNGER SUCKER pixels + the held plunger's own shading.
     string private constant HELD_SUCKER_PX =
-        '" d="M20 16h5v1h-5zM21 17h3v1h-3zM22 18h1v1h-1z"/><path fill="#000" opacity=".1" d="M20 16h1v1h-1zM21 17h1v1h-1z"/><path fill="#fff" opacity=".08" d="M24 16h1v1h-1zM23 17h1v1h-1zM22 18h1v1h-1z"/>';
+        '" d="M16 8h5v1h-5zM17 9h3v1h-3zM18 10h1v1h-1z"/><path fill="#000" opacity=".1" d="M16 8h1v1h-1zM17 9h1v1h-1z"/><path fill="#000" opacity=".2" d="M18 12h1v2h-1zM18 16h1v2h-1z"/><path fill="#fff" opacity=".08" d="M20 8h1v1h-1zM19 9h1v1h-1zM18 10h1v1h-1z"/>';
 
     // ---------------------------------------------------------------------
     // Trait derivation - WHAT DETERMINES EACH PART'S COLOR AND PRESENCE
@@ -248,7 +248,7 @@ library ArtPlumberRenderer {
         bytes memory json = abi.encodePacked(
             '{"name":"Art Plumber #',
             toString(id),
-            '","description":"Fully on-chain pixel plumber. Plunger loadout and six gear colors are rolled from the mint seed - hunt for matching suckers, sticks and uniform.","image":"data:image/svg+xml;base64,',
+            '","description":"Fully on-chain pixel frog plumber. Plunger loadout and six gear colors are rolled from the mint seed - hunt for matching suckers, sticks and uniform.","image":"data:image/svg+xml;base64,',
             encode(bytes(svg(t)))
         );
         json = abi.encodePacked(json, '","attributes":', attrs, "]}");

@@ -1,7 +1,7 @@
 # Art Plumber
 
-A fully on-chain pixel-art NFT: a little plumber who hangs from one plunger
-and holds another. No IPFS, no servers — the ERC-721 contract itself
+A fully on-chain pixel-art NFT: a little frog plumber who hangs from one
+plunger and holds another. No IPFS, no servers — the ERC-721 contract itself
 generates the SVG and the metadata JSON, so the art lives as long as the
 chain does.
 
@@ -16,7 +16,7 @@ token's look. Seven nibbles (4-bit values) of the seed are read:
 
 | Seed nibble | Slot | What it determines |
 |---|---|---|
-| 0 | `headSucker` | color of the plunger **sucker** stuck on his head |
+| 0 | `headSucker` | color of the plunger **sucker** stuck on his head (covers his ears) |
 | 1 | `heldSucker` | color of the **sucker** of the plunger he is holding |
 | 2 | `headStick` | color of the plunger **stick** he hangs from |
 | 3 | `heldStick` | color of the **other stick** (the held plunger's handle) |
@@ -52,7 +52,8 @@ doesn't:
 
 Color traits of an absent plunger are omitted from the metadata, and sucker/
 stick matches only count when both parts are actually on the art — so a
-Perfect Plumber is always a Double.
+Perfect Plumber is always a Double. When the head plunger is present its
+sucker covers the frog's ear bumps; otherwise the ears show.
 
 ### The palette
 
@@ -72,9 +73,10 @@ Skin, face, belt and background are fixed and not part of the hunt.
 
 ## How the art stays small on-chain
 
-- 32×32 grid extracted pixel-for-pixel from the source image.
+- 24×24 grid extracted cell-for-cell from the source image
+  (`scripts/extract_grid.py`).
 - Pixels are merged into runs and drawn as `<path>` subpaths
-  (`M15 2h1v9h-1z`), not one rect per pixel — the full SVG is ~1.6 KB.
+  (`M11 0h1v4h-1z`), not one rect per pixel — the full SVG is ~1.7 KB.
 - Each recolorable part is one flat `fill`; shading is layered on top as
   fixed translucent black/white pixels, so any palette color keeps the
   original pixel-art depth.
@@ -88,7 +90,9 @@ Skin, face, belt and background are fixed and not part of the hunt.
 src/ArtPlumberRenderer.sol  seed -> traits -> SVG -> tokenURI (all pure, no deps)
 src/ArtPlumber.sol          ERC-721 + mint + seed storage (self-contained, no deps)
 test/ArtPlumber.t.sol       foundry tests (no forge-std needed)
+scripts/extract_grid.py     pixel-grid extractor for new source images
 scripts/build_svg.py        regenerates the SVG segments from the pixel grid
+scripts/gallery.py          builds art/gallery.html with simulated mints
 art/*.svg                   previews of the variants
 ```
 

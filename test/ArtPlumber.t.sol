@@ -5,10 +5,10 @@ import {ArtPlumber} from "../src/ArtPlumber.sol";
 import {ArtPlumberRenderer} from "../src/ArtPlumberRenderer.sol";
 
 contract ArtPlumberTest {
-    string constant HEAD_STICK_GEOM = "M15 2h1v9h-1z";
-    string constant HELD_STICK_GEOM = "M22 19h1v3h-1z";
-    string constant HEAD_SUCKER_GEOM = "M13 13h5v1h-5z";
-    string constant HELD_SUCKER_GEOM = "M20 16h5v1h-5z";
+    string constant HEAD_STICK_GEOM = "M11 0h1v4h-1z";
+    string constant HELD_STICK_GEOM = "M18 11h1v3h-1z";
+    string constant HEAD_SUCKER_GEOM = "M9 6h5v1h-5z";
+    string constant HELD_SUCKER_GEOM = "M16 8h5v1h-5z";
 
     ArtPlumber nft;
 
@@ -79,8 +79,7 @@ contract ArtPlumberTest {
     }
 
     function test_SvgContainsEachSlotColorOnce() public pure {
-        // six distinct slots, none rolling palette index 1 (Ash Brown), which
-        // legitimately also appears in the fixed belt art; double plungers
+        // six distinct slot colors, double plungers
         ArtPlumberRenderer.Traits memory t =
             ArtPlumberRenderer.traitsOf(bytes32(uint256(0x0765432)));
         string memory s = ArtPlumberRenderer.svg(t);
@@ -111,7 +110,7 @@ contract ArtPlumberTest {
         // none (nibble 6 = 15): body still renders, no plunger pixels at all
         s = ArtPlumberRenderer.svg(ArtPlumberRenderer.traitsOf(bytes32(uint256(0xF765432))));
         require(count(s, HEAD_STICK_GEOM) == 0 && count(s, HELD_STICK_GEOM) == 0, "plungerless");
-        require(count(s, "M13 20h5v1h-5z") == 1, "suit still drawn");
+        require(count(s, "M9 12h5v1h-5z") == 1, "suit still drawn");
         require(count(s, "</svg>") == 1, "closed");
     }
 
