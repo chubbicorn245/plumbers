@@ -146,15 +146,18 @@ signed voucher:
    (domain `{name: "Art Plumber", version: "1", chainId, contract}`,
    message `MintVoucher(address wallet)`). `voucherDigest(wallet)` on the
    contract returns the exact digest; standard `signTypedData` matches it.
-3. **Mint:** `mint(signature)` verifies the voucher with `ecrecover`
-   (no new dependencies). The voucher is bound to one wallet, this chain,
-   and this contract — it can't be borrowed or replayed — and stays
-   reusable by its wallet until `WALLET_LIMIT` is hit, which the contract
+3. **Mint:** `mint(quantity, signature)` takes 1-3 tokens at `MINT_PRICE`
+   (0.0069 ETH) each — `msg.value` must equal `quantity * MINT_PRICE` —
+   and verifies the voucher with `ecrecover` (no new dependencies). The
+   voucher is bound to one wallet, this chain, and this contract — it
+   can't be borrowed or replayed — and stays reusable by its wallet until
+   `WALLET_LIMIT` (3 total, across all calls) is hit, which the contract
    enforces regardless.
 
-The `signer` address is an immutable constructor argument: no owner, no
-rotation. If the key is compromised or lost the contract must be
-redeployed, so keep it in a secret manager.
+The `signer` and `payout` addresses are immutable constructor arguments:
+no owner, no rotation. `withdraw()` is callable by anyone but only ever
+sends the proceeds to `payout`. If the signer key is compromised or lost
+the contract must be redeployed, so keep it in a secret manager.
 
 ## Build, test, deploy
 
@@ -165,21 +168,91 @@ forge test
 # local dry run (sign a voucher for the minter, then mint with it)
 anvil &
 forge create src/ArtPlumber.sol:ArtPlumber --private-key <deploy-key> --broadcast \
-  --constructor-args <signer-address>
-cast send <addr> "mint(bytes)" <voucher-signature> --private-key <minter-key>
+  --constructor-args <signer-address> <payout-address>
+cast send <addr> "mint(uint256,bytes)" 3 <voucher-signature> \
+  --value 0.0207ether --private-key <minter-key>
 cast call <addr> "tokenURI(uint256)(string)" 1
 ```
 
 Both contracts are dependency-free, so you can also paste
 `src/ArtPlumberRenderer.sol` + `src/ArtPlumber.sol` straight into Remix.
 
-Before a real deployment:
+### Deploy to Robinhood Chain testnet
 
-- Set `MAX_SUPPLY` (collection size) and `WALLET_LIMIT` (max mints per
-  address, currently 3; each `mint(bytes)` call is one token per
-  transaction) in `ArtPlumber.sol`.
-- Generate a dedicated eligibility signer key and pass its address as the
-  constructor argument — double-check it; it's immutable.
+Robinhood Chain is an Arbitrum Orbit L2 with ETH as the gas token; the
+testnet is standard Foundry territory:
+
+```sh
+# network
+export RH_RPC_URL=https://rpc.testnet.chain.robinhood.com   # chain id 46630
+# fund the deployer with testnet ETH first:
+#   https://faucet.testnet.chain.robinhood.com
+
+# one-time: generate the eligibility signer key; keep the private key in a
+# secret manager (the backend signs vouchers with it, and it can't be rotated)
+cast wallet new
+
+export PRIVATE_KEY=<deployer key>
+export SIGNER_ADDRESS=<address from cast wallet new>
+export PAYOUT_ADDRESS=<where withdraw() sends mint proceeds>
+
+forge create --rpc-url $RH_RPC_URL --private-key $PRIVATE_KEY --broadcast \
+  src/ArtPlumber.sol:ArtPlumber --constructor-args $SIGNER_ADDRESS $PAYOUT_ADDRESS
+```
+
+Note: keep `--constructor-args` last — it swallows any flags placed after
+it. Sanity-check the deployment before wiring anything to it:
+
+```sh
+cast call <addr> "signer()(address)" --rpc-url $RH_RPC_URL   # = SIGNER_ADDRESS
+```
+
+### Verify on the explorer
+
+The explorer (`https://explorer.testnet.chain.robinhood.com`) is a
+Blockscout instance — Robinhood Chain's Etherscan equivalent — and takes
+standard Foundry verification:
+
+```sh
+forge verify-contract <addr> src/ArtPlumber.sol:ArtPlumber \
+  --chain-id 46630 \
+  --verifier blockscout \
+  --verifier-url https://explorer.testnet.chain.robinhood.com/api/ \
+  --constructor-args $(cast abi-encode "constructor(address,address)" $SIGNER_ADDRESS $PAYOUT_ADDRESS)
+```
+
+Once verified, the explorer shows the source, lets anyone read
+`voucherDigest`/`matchesOf`/`tokenURI` directly, and renders the
+Read/Write tabs. (Mainnet, when it's time, is the same flow with the
+mainnet RPC/explorer URLs and chain id.)
+
+### Export the ABI for the mint site
+
+The website needs the ABI to call `mint(uint256,bytes)` (payable) and
+the views with wagmi/viem:
+
+```sh
+forge inspect ArtPlumber abi --json > artplumber-abi.json
+```
+
+For nice TypeScript inference, paste it into the site as a const:
+
+```ts
+// lib/abi/art-plumber.ts
+export const artPlumberAbi = [ /* contents of artplumber-abi.json */ ] as const;
+```
+
+Regenerate after any contract change — wagmi's type inference only sees
+what's in that file.
+
+### Before a real deployment
+
+- Set `MAX_SUPPLY` (collection size), `WALLET_LIMIT` (max tokens per
+  address, currently 3 total; each `mint(uint256,bytes)` call takes 1-3),
+  and `MINT_PRICE` (currently 0.0069 ETH per token) in `ArtPlumber.sol`.
+- Generate a dedicated eligibility signer key and pick the payout
+  address, then pass both as constructor arguments — double-check them;
+  they're immutable.
 - Marketplace compatibility: `tokenURI` returns the standard
   `data:application/json;base64,` URI with a base64 SVG image — the
   documented OpenSea on-chain metadata format (same pattern as

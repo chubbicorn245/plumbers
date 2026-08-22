@@ -24,11 +24,14 @@ contract ArtPlumberTest {
     Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     uint256 constant SIGNER_KEY = uint256(keccak256("art plumber test signer"));
     uint256 constant WRONG_KEY = uint256(keccak256("not the signer"));
+    address constant PAYOUT = address(0xCAFE);
 
     ArtPlumber nft;
+    uint256 price;
 
     function setUp() public {
-        nft = new ArtPlumber(vm.addr(SIGNER_KEY));
+        nft = new ArtPlumber(vm.addr(SIGNER_KEY), PAYOUT);
+        price = nft.MINT_PRICE();
     }
 
     /// EIP-712 voucher for `wallet`, signed by the eligibility signer.
@@ -42,16 +45,66 @@ contract ArtPlumberTest {
     }
 
     function test_MintAssignsOwnerAndSeed() public {
-        uint256 id = nft.mint(voucher(address(this)));
+        uint256 id = nft.mint{value: price}(1, voucher(address(this)));
         require(id == 1, "first id should be 1");
         require(nft.ownerOf(1) == address(this), "owner");
         require(nft.seedOf(1) != bytes32(0), "seed set");
         require(nft.totalSupply() == 1, "supply");
     }
 
+    function test_BatchMintThree() public {
+        uint256 firstId = nft.mint{value: 3 * price}(3, voucher(address(this)));
+        require(firstId == 1, "batch starts at 1");
+        require(nft.totalSupply() == 3, "supply");
+        require(nft.mintedBy(address(this)) == 3, "wallet count");
+        for (uint256 id = 1; id <= 3; id++) {
+            require(nft.ownerOf(id) == address(this), "owner of batch token");
+            require(nft.seedOf(id) != bytes32(0), "seed set");
+        }
+        // same block, same minter - ids still give every token its own roll
+        require(nft.seedOf(1) != nft.seedOf(2) && nft.seedOf(2) != nft.seedOf(3), "distinct seeds");
+    }
+
+    function test_MintRejectsBadQuantity() public {
+        bytes memory sig = voucher(address(this));
+        try nft.mint{value: 0}(0, sig) {
+            revert("quantity 0 should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "BAD_QUANTITY"), "zero quantity reason");
+        }
+        try nft.mint{value: 4 * price}(4, sig) {
+            revert("quantity 4 should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "BAD_QUANTITY"), "four quantity reason");
+        }
+    }
+
+    function test_MintRejectsWrongPrice() public {
+        bytes memory sig = voucher(address(this));
+        try nft.mint{value: price - 1}(1, sig) {
+            revert("underpay should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WRONG_PRICE"), "underpay reason");
+        }
+        try nft.mint{value: 2 * price}(1, sig) {
+            revert("overpay should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WRONG_PRICE"), "overpay reason");
+        }
+    }
+
+    function test_WithdrawSendsProceedsToPayout() public {
+        nft.mint{value: 3 * price}(3, voucher(address(this)));
+        require(address(nft).balance == 3 * price, "proceeds held");
+        uint256 before = PAYOUT.balance;
+        nft.withdraw();
+        require(address(nft).balance == 0, "contract drained");
+        require(PAYOUT.balance == before + 3 * price, "payout received");
+    }
+
     function test_MintRejectsWrongSigner() public {
         bytes memory sig = voucherFrom(WRONG_KEY, address(this));
-        try nft.mint(sig) {
+        try nft.mint{value: price}(1, sig) {
             revert("wrong-signer voucher should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
@@ -61,7 +114,7 @@ contract ArtPlumberTest {
     function test_MintRejectsSomeoneElsesVoucher() public {
         // voucher names another wallet; this contract can't use it
         bytes memory sig = voucher(address(0xBEEF));
-        try nft.mint(sig) {
+        try nft.mint{value: price}(1, sig) {
             revert("borrowed voucher should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
@@ -69,7 +122,7 @@ contract ArtPlumberTest {
     }
 
     function test_MintRejectsMalformedSignature() public {
-        try nft.mint(hex"deadbeef") {
+        try nft.mint{value: price}(1, hex"deadbeef") {
             revert("short signature should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
@@ -79,9 +132,9 @@ contract ArtPlumberTest {
     function test_VoucherBoundToContractInstance() public {
         // same signer, second deployment: domain separator differs, so a
         // voucher for nft must not verify on the new instance
-        ArtPlumber other = new ArtPlumber(vm.addr(SIGNER_KEY));
+        ArtPlumber other = new ArtPlumber(vm.addr(SIGNER_KEY), PAYOUT);
         bytes memory sigForNft = voucher(address(this));
-        try other.mint(sigForNft) {
+        try other.mint{value: price}(1, sigForNft) {
             revert("cross-contract replay should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
@@ -89,10 +142,15 @@ contract ArtPlumberTest {
     }
 
     function test_ConstructorRejectsZeroSigner() public {
-        try new ArtPlumber(address(0)) {
+        try new ArtPlumber(address(0), PAYOUT) {
             revert("zero signer should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "ZERO_SIGNER"), "wrong revert reason");
+        }
+        try new ArtPlumber(vm.addr(SIGNER_KEY), address(0)) {
+            revert("zero payout should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "ZERO_PAYOUT"), "wrong revert reason");
         }
     }
 
@@ -195,22 +253,27 @@ contract ArtPlumberTest {
 
     function test_WalletLimit() public {
         // one voucher, reused across mints: eligibility isn't consumed,
-        // the wallet cap is what stops the fourth mint
+        // the wallet cap is what stops the fourth token
         bytes memory sig = voucher(address(this));
-        nft.mint(sig);
-        nft.mint(sig);
-        nft.mint(sig);
+        nft.mint{value: 2 * price}(2, sig);
+        nft.mint{value: price}(1, sig);
         require(nft.mintedBy(address(this)) == 3, "three minted");
-        try nft.mint(sig) {
-            revert("4th mint should revert");
+        try nft.mint{value: price}(1, sig) {
+            revert("4th token should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
         }
-        require(nft.totalSupply() == 3, "supply unchanged by failed mint");
+        // 2 + 2 must also fail: the cap is total, not per-tx
+        try nft.mint{value: 2 * price}(2, sig) {
+            revert("2+2 should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
+        }
+        require(nft.totalSupply() == 3, "supply unchanged by failed mints");
     }
 
     function test_TokenURIShape() public {
-        uint256 id = nft.mint(voucher(address(this)));
+        uint256 id = nft.mint{value: price}(1, voucher(address(this)));
         string memory uri = nft.tokenURI(id);
         require(startsWith(uri, "data:application/json;base64,"), "data uri prefix");
         require(bytes(uri).length > 1000, "payload present");

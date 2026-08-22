@@ -120,11 +120,17 @@ contract ArtPlumber is ERC721 {
 
     uint256 public constant MAX_SUPPLY = 1024; // adjust before deploying
 
-    /// @notice Max mints per wallet. mint() is inherently one token per
-    ///         transaction; this additionally caps the total a single
-    ///         address can ever mint. (Determined hunters can still use
-    ///         multiple wallets - this is friction, not a wall.)
+    /// @notice Max mints per wallet, total across all transactions. A
+    ///         single mint() call takes 1-3 tokens. (Determined hunters can
+    ///         still use multiple wallets - this is friction, not a wall.)
     uint256 public constant WALLET_LIMIT = 3;
+
+    /// @notice Price per token, paid in the chain's native token (ETH).
+    uint256 public constant MINT_PRICE = 0.0069 ether;
+
+    /// @notice Where withdraw() sends the mint proceeds. Immutable, like
+    ///         everything else here: no owner, no rug surface.
+    address public immutable payout;
 
     /// @notice Address whose EIP-712 vouchers grant mint eligibility.
     ///         Immutable: no owner, no rotation - a compromised or lost
@@ -152,9 +158,11 @@ contract ArtPlumber is ERC721 {
     ///         ArtPlumberRenderer.traitsOf for the slot <-> nibble map).
     mapping(uint256 => bytes32) public seedOf;
 
-    constructor(address signer_) ERC721("Art Plumber", "PLMBR") {
+    constructor(address signer_, address payout_) ERC721("Art Plumber", "PLMBR") {
         require(signer_ != address(0), "ZERO_SIGNER");
+        require(payout_ != address(0), "ZERO_PAYOUT");
         signer = signer_;
+        payout = payout_;
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
                 keccak256(
@@ -181,22 +189,44 @@ contract ArtPlumber is ERC721 {
         );
     }
 
-    /// @notice Mint the next token. The seed - and therefore every color
-    ///         and the plunger loadout - is fixed here and can never change.
+    /// @notice Mint `quantity` tokens (1-3) at MINT_PRICE each. Every
+    ///         token's seed - and therefore every color and the plunger
+    ///         loadout - is fixed here and can never change.
+    /// @param  quantity  1-3 tokens; mintedBy[msg.sender] can never
+    ///         exceed WALLET_LIMIT across all calls.
     /// @param  signature 65-byte EIP-712 voucher (r||s||v) for msg.sender,
     ///         signed by `signer`. Reusable by the same wallet until it
     ///         hits WALLET_LIMIT; useless to anyone else.
+    /// @return firstId the first minted id; the batch is firstId..firstId+quantity-1.
     /// @dev    prevrandao + minter + id keeps the roll unpredictable enough
-    ///         for a fun hunt. (On some L2s prevrandao is weak; use a
-    ///         commit-reveal or VRF if real value rides on the odds.)
-    function mint(bytes calldata signature) external returns (uint256 id) {
-        require(mintedBy[msg.sender] < WALLET_LIMIT, "WALLET_LIMIT");
+    ///         for a fun hunt; ids differ within a batch so every token
+    ///         still rolls its own seed. (On some L2s prevrandao is weak;
+    ///         use commit-reveal or VRF if real value rides on the odds.)
+    function mint(uint256 quantity, bytes calldata signature)
+        external
+        payable
+        returns (uint256 firstId)
+    {
+        require(quantity > 0 && quantity <= WALLET_LIMIT, "BAD_QUANTITY");
+        require(mintedBy[msg.sender] + quantity <= WALLET_LIMIT, "WALLET_LIMIT");
+        require(msg.value == quantity * MINT_PRICE, "WRONG_PRICE");
         require(_isValidVoucher(msg.sender, signature), "NOT_ELIGIBLE");
-        mintedBy[msg.sender]++;
-        id = ++totalSupply;
-        require(id <= MAX_SUPPLY, "SOLD_OUT");
-        seedOf[id] = keccak256(abi.encodePacked(block.prevrandao, msg.sender, id));
-        _mint(msg.sender, id);
+        require(totalSupply + quantity <= MAX_SUPPLY, "SOLD_OUT");
+        mintedBy[msg.sender] += quantity;
+        firstId = totalSupply + 1;
+        for (uint256 i = 0; i < quantity; i++) {
+            uint256 id = ++totalSupply;
+            seedOf[id] = keccak256(abi.encodePacked(block.prevrandao, msg.sender, id));
+            _mint(msg.sender, id);
+        }
+    }
+
+    /// @notice Send the accumulated mint proceeds to `payout`. Callable by
+    ///         anyone - the destination is fixed, so there's nothing to
+    ///         gain by calling it for someone else.
+    function withdraw() external {
+        (bool ok,) = payout.call{value: address(this).balance}("");
+        require(ok, "WITHDRAW_FAILED");
     }
 
     function _isValidVoucher(address wallet, bytes calldata signature)
