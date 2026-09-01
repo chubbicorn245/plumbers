@@ -144,6 +144,7 @@ scripts/extract_grid.py     pixel-grid extractor for new source images
 scripts/build_svg.py        regenerates the SVG segments from the pixel grid
 scripts/gallery.py          builds art/gallery.html with simulated mints
 scripts/deploy-testnet.sh   guarded deploy + verify to Robinhood testnet
+deployments/*.json          deployed addresses, one file per network
 art/*.svg                   previews of the variants
 ```
 
@@ -253,9 +254,13 @@ export PAYOUT_ADDRESS=<where withdraw() sends mint proceeds>
 
 It refuses to spend on a malformed or zero signer/payout, on the wrong
 chain, or with an unfunded deployer; shows the permanent choices and waits
-for you to type `deploy`; then verifies on Blockscout and prints the
-`NEXT_PUBLIC_ART_PLUMBER_ADDRESS` line for the website. Deployment costs
-about 0.00004 ETH at current testnet gas.
+for you to type `deploy`; then reads the immutables back off-chain, appends
+the address to `deployments/robinhood-testnet.json`, verifies on Blockscout,
+and prints the `NEXT_PUBLIC_ART_PLUMBER_ADDRESS` line for the website.
+Deployment costs about 0.00004 ETH at current testnet gas.
+
+The current testnet deployment is
+[`0x64b7363007ce9a918a97fF1102672307215BDEf7`](https://explorer.testnet.chain.robinhood.com/address/0x64b7363007ce9a918a97fF1102672307215BDEf7).
 
 The same thing by hand:
 

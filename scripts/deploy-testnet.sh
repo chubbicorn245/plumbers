@@ -63,6 +63,7 @@ forge create --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --broadcast \
   --constructor-args "$SIGNER_ADDRESS" "$PAYOUT_ADDRESS" > .deploy.json
 
 address=$(python3 -c 'import json;print(json.load(open(".deploy.json"))["deployedTo"])')
+creation_tx=$(python3 -c 'import json;print(json.load(open(".deploy.json")).get("transactionHash",""))')
 rm -f .deploy.json
 echo
 echo "deployed to $address"
@@ -75,6 +76,63 @@ lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 [ "$(lower "$on_signer")" = "$(lower "$SIGNER_ADDRESS")" ] || die "on-chain signer is $on_signer, expected $SIGNER_ADDRESS"
 [ "$(lower "$on_payout")" = "$(lower "$PAYOUT_ADDRESS")" ] || die "on-chain payout is $on_payout, expected $PAYOUT_ADDRESS"
 echo "verified on-chain: signer and payout match"
+
+# Record the address before anything else can fail. forge create writes no
+# broadcast artifact, so without this the address survives only in the
+# operator's scrollback.
+record=deployments/robinhood-testnet.json
+mkdir -p deployments
+[ -f "$record" ] || echo '[]' > "$record"
+
+RECORD_FILE="$record" \
+ADDRESS="$address" \
+CHAIN_ID="$chain_id" \
+CREATION_TX="$creation_tx" \
+BLOCK="$([ -n "$creation_tx" ] && cast receipt "$creation_tx" --rpc-url "$RPC_URL" blockNumber 2>/dev/null || echo '')" \
+COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+EXPLORER_URL="$EXPLORER" \
+MAX_SUPPLY="$(cast call "$address" 'MAX_SUPPLY()(uint256)' --rpc-url "$RPC_URL")" \
+MAX_PER_TX="$(cast call "$address" 'MAX_PER_TX()(uint256)' --rpc-url "$RPC_URL")" \
+FREE_ALLOWANCE="$(cast call "$address" 'FREE_ALLOWANCE()(uint256)' --rpc-url "$RPC_URL")" \
+MINT_PRICE_WEI="$(cast call "$address" 'MINT_PRICE()(uint256)' --rpc-url "$RPC_URL")" \
+python3 <<'PYEOF'
+import datetime, json, os
+
+
+def num(name):
+    """cast prints uint256 as `123 [1.23e2]`; keep the decimal part."""
+    raw = os.environ.get(name, "").strip()
+    return int(raw.split()[0]) if raw else None
+
+
+path = os.environ["RECORD_FILE"]
+with open(path) as f:
+    records = json.load(f)
+
+records.append({
+    "address": os.environ["ADDRESS"],
+    "network": "Robinhood Chain Testnet",
+    "chainId": int(os.environ["CHAIN_ID"]),
+    "creationTx": os.environ.get("CREATION_TX") or None,
+    "block": num("BLOCK"),
+    "deployedAt": datetime.datetime.now(datetime.timezone.utc)
+                  .isoformat(timespec="seconds").replace("+00:00", "Z"),
+    "commit": os.environ["COMMIT"],
+    "constants": {
+        "MAX_SUPPLY": num("MAX_SUPPLY"),
+        "MAX_PER_TX": num("MAX_PER_TX"),
+        "FREE_ALLOWANCE": num("FREE_ALLOWANCE"),
+        "MINT_PRICE_WEI": num("MINT_PRICE_WEI"),
+    },
+    "explorer": f"{os.environ['EXPLORER_URL']}/address/{os.environ['ADDRESS']}",
+})
+
+with open(path, "w") as f:
+    json.dump(records, f, indent=2)
+    f.write("\n")
+
+print(f"recorded in {path} ({len(records)} deployment(s))")
+PYEOF
 
 echo
 echo "verifying source on Blockscout..."
