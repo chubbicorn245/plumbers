@@ -94,5 +94,9 @@ Done.
 Add to the website's .env.local (and the Vercel project):
 
   NEXT_PUBLIC_ART_PLUMBER_ADDRESS=$address
-  ELIGIBILITY_SIGNER_PRIVATE_KEY=<the private key for $SIGNER_ADDRESS>
+
+Then set ELIGIBILITY_SIGNER_PRIVATE_KEY to the 32-byte hex private key of
+$SIGNER_ADDRESS -- the "Private key" line from cast wallet new, starting
+with 0x. Do not paste this message's text as the value; it is a
+description, not a key.
 EOF
