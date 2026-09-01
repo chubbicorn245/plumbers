@@ -29,6 +29,9 @@ contract ArtPlumberTest {
     ArtPlumber nft;
     uint256 price;
 
+    /// @dev No voucher at all: the public, pay-per-token path.
+    bytes constant NO_VOUCHER = hex"";
+
     function setUp() public {
         nft = new ArtPlumber(vm.addr(SIGNER_KEY), PAYOUT);
         price = nft.MINT_PRICE();
@@ -45,7 +48,8 @@ contract ArtPlumberTest {
     }
 
     function test_MintAssignsOwnerAndSeed() public {
-        uint256 id = nft.mint{value: price}(1, voucher(address(this)));
+        // OG wallet's first token is free, so msg.value must be 0
+        uint256 id = nft.mint{value: 0}(1, voucher(address(this)));
         require(id == 1, "first id should be 1");
         require(nft.ownerOf(1) == address(this), "owner");
         require(nft.seedOf(1) != bytes32(0), "seed set");
@@ -53,10 +57,12 @@ contract ArtPlumberTest {
     }
 
     function test_BatchMintThree() public {
-        uint256 firstId = nft.mint{value: 3 * price}(3, voucher(address(this)));
+        // 2 free + 1 paid in a single call
+        uint256 firstId = nft.mint{value: price}(3, voucher(address(this)));
         require(firstId == 1, "batch starts at 1");
         require(nft.totalSupply() == 3, "supply");
         require(nft.mintedBy(address(this)) == 3, "wallet count");
+        require(nft.freeMintedBy(address(this)) == 2, "free allowance spent");
         for (uint256 id = 1; id <= 3; id++) {
             require(nft.ownerOf(id) == address(this), "owner of batch token");
             require(nft.seedOf(id) != bytes32(0), "seed set");
@@ -72,73 +78,70 @@ contract ArtPlumberTest {
         } catch Error(string memory reason) {
             require(eq(reason, "BAD_QUANTITY"), "zero quantity reason");
         }
-        try nft.mint{value: 4 * price}(4, sig) {
-            revert("quantity 4 should revert");
+        try nft.mint{value: 19 * price}(21, sig) {
+            revert("quantity 21 should revert");
         } catch Error(string memory reason) {
-            require(eq(reason, "BAD_QUANTITY"), "four quantity reason");
+            require(eq(reason, "BAD_QUANTITY"), "over-MAX_PER_TX reason");
         }
     }
 
     function test_MintRejectsWrongPrice() public {
-        bytes memory sig = voucher(address(this));
-        try nft.mint{value: price - 1}(1, sig) {
+        try nft.mint{value: price - 1}(1, NO_VOUCHER) {
             revert("underpay should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "WRONG_PRICE"), "underpay reason");
         }
-        try nft.mint{value: 2 * price}(1, sig) {
+        try nft.mint{value: 2 * price}(1, NO_VOUCHER) {
             revert("overpay should revert");
         } catch Error(string memory reason) {
             require(eq(reason, "WRONG_PRICE"), "overpay reason");
         }
     }
 
+    function test_MintRejectsPaymentForAFreeToken() public {
+        // an OG's first two are free: sending the public price is an overpay
+        try nft.mint{value: price}(1, voucher(address(this))) {
+            revert("paying for a free token should revert");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WRONG_PRICE"), "free-token overpay reason");
+        }
+    }
+
     function test_WithdrawSendsProceedsToPayout() public {
-        nft.mint{value: 3 * price}(3, voucher(address(this)));
-        require(address(nft).balance == 3 * price, "proceeds held");
+        // 2 free + 1 paid: only the paid token contributes proceeds
+        nft.mint{value: price}(3, voucher(address(this)));
+        require(address(nft).balance == price, "proceeds held");
         uint256 before = PAYOUT.balance;
         nft.withdraw();
         require(address(nft).balance == 0, "contract drained");
-        require(PAYOUT.balance == before + 3 * price, "payout received");
+        require(PAYOUT.balance == before + price, "payout received");
     }
 
-    function test_MintRejectsWrongSigner() public {
-        bytes memory sig = voucherFrom(WRONG_KEY, address(this));
-        try nft.mint{value: price}(1, sig) {
-            revert("wrong-signer voucher should revert");
-        } catch Error(string memory reason) {
-            require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
-        }
+    function test_WrongSignerVoucherGrantsNoFreeMint() public {
+        assertNoFreeMint(voucherFrom(WRONG_KEY, address(this)), "wrong signer");
     }
 
-    function test_MintRejectsSomeoneElsesVoucher() public {
-        // voucher names another wallet; this contract can't use it
-        bytes memory sig = voucher(address(0xBEEF));
-        try nft.mint{value: price}(1, sig) {
-            revert("borrowed voucher should revert");
-        } catch Error(string memory reason) {
-            require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
-        }
+    function test_BorrowedVoucherGrantsNoFreeMint() public {
+        // voucher names another wallet; this contract can't claim its free mints
+        assertNoFreeMint(voucher(address(0xBEEF)), "borrowed voucher");
     }
 
-    function test_MintRejectsMalformedSignature() public {
-        try nft.mint{value: price}(1, hex"deadbeef") {
-            revert("short signature should revert");
-        } catch Error(string memory reason) {
-            require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
-        }
+    function test_MalformedSignatureGrantsNoFreeMint() public {
+        assertNoFreeMint(hex"deadbeef", "malformed signature");
     }
 
     function test_VoucherBoundToContractInstance() public {
         // same signer, second deployment: domain separator differs, so a
-        // voucher for nft must not verify on the new instance
+        // voucher for nft must not grant free mints on the new instance
         ArtPlumber other = new ArtPlumber(vm.addr(SIGNER_KEY), PAYOUT);
         bytes memory sigForNft = voucher(address(this));
-        try other.mint{value: price}(1, sigForNft) {
-            revert("cross-contract replay should revert");
+        try other.mint{value: 0}(1, sigForNft) {
+            revert("cross-contract voucher should not be free");
         } catch Error(string memory reason) {
-            require(eq(reason, "NOT_ELIGIBLE"), "wrong revert reason");
+            require(eq(reason, "WRONG_PRICE"), "wrong revert reason");
         }
+        other.mint{value: price}(1, sigForNft);
+        require(other.freeMintedBy(address(this)) == 0, "no free allowance consumed");
     }
 
     function test_ConstructorRejectsZeroSigner() public {
@@ -251,25 +254,31 @@ contract ArtPlumberTest {
         require(eq(label(0xF), "None"), "none");
     }
 
-    function test_WalletLimit() public {
-        // one voucher, reused across mints: eligibility isn't consumed,
-        // the wallet cap is what stops the fourth token
+    function test_NoPerWalletCap() public {
+        // one wallet, far past any old cap: only MAX_PER_TX bounds a single
+        // call, and nothing bounds the total
         bytes memory sig = voucher(address(this));
-        nft.mint{value: 2 * price}(2, sig);
-        nft.mint{value: price}(1, sig);
-        require(nft.mintedBy(address(this)) == 3, "three minted");
-        try nft.mint{value: price}(1, sig) {
-            revert("4th token should revert");
+        nft.mint{value: 18 * price}(20, sig); // 2 free + 18 paid
+        nft.mint{value: 20 * price}(20, sig);
+        nft.mint{value: 20 * price}(20, sig);
+        require(nft.mintedBy(address(this)) == 60, "sixty minted by one wallet");
+        require(nft.totalSupply() == 60, "supply");
+        require(nft.freeMintedBy(address(this)) == 2, "still only two free");
+        require(address(nft).balance == 58 * price, "58 paid, 2 free");
+    }
+
+    function test_MaxPerTxIsAGasGuardNotAnAllocation() public {
+        // the 21st token in one call is refused, but the same wallet may
+        // immediately send another full call
+        bytes memory sig = voucher(address(this));
+        try nft.mint{value: 19 * price}(21, sig) {
+            revert("21 in one call should revert");
         } catch Error(string memory reason) {
-            require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
+            require(eq(reason, "BAD_QUANTITY"), "wrong revert reason");
         }
-        // 2 + 2 must also fail: the cap is total, not per-tx
-        try nft.mint{value: 2 * price}(2, sig) {
-            revert("2+2 should revert");
-        } catch Error(string memory reason) {
-            require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
-        }
-        require(nft.totalSupply() == 3, "supply unchanged by failed mints");
+        nft.mint{value: 18 * price}(20, sig);
+        nft.mint{value: 20 * price}(20, sig);
+        require(nft.mintedBy(address(this)) == 40, "40 across two calls");
     }
 
     function test_DisclaimerOnchain() public view {
@@ -281,7 +290,7 @@ contract ArtPlumberTest {
     }
 
     function test_TokenURIShape() public {
-        uint256 id = nft.mint{value: price}(1, voucher(address(this)));
+        uint256 id = nft.mint{value: 0}(1, voucher(address(this)));
         string memory uri = nft.tokenURI(id);
         require(startsWith(uri, "data:application/json;base64,"), "data uri prefix");
         require(bytes(uri).length > 1000, "payload present");
@@ -301,7 +310,88 @@ contract ArtPlumberTest {
         }
     }
 
+    // --------------------- mint economics ----------------------
+
+    function test_MintConstants() public view {
+        require(nft.MAX_SUPPLY() == 2000, "collection size");
+        require(nft.MAX_PER_TX() == 20, "gas guard per transaction");
+        require(nft.FREE_ALLOWANCE() == 2, "free tokens per OG wallet");
+        require(nft.MINT_PRICE() == 0.003 ether, "price per paid token");
+    }
+
+    function test_OgFirstTwoTokensAreFree() public {
+        nft.mint{value: 0}(2, voucher(address(this)));
+        require(nft.totalSupply() == 2, "two minted");
+        require(nft.freeMintedBy(address(this)) == 2, "both counted as free");
+        require(address(nft).balance == 0, "no proceeds from free mints");
+    }
+
+    function test_OgThirdTokenCostsFullPrice() public {
+        bytes memory sig = voucher(address(this));
+        nft.mint{value: 0}(2, sig);
+        try nft.mint{value: 0}(1, sig) {
+            revert("third token should not be free");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WRONG_PRICE"), "third-token reason");
+        }
+        nft.mint{value: price}(1, sig);
+        require(nft.mintedBy(address(this)) == 3, "three minted");
+        require(nft.freeMintedBy(address(this)) == 2, "free allowance stays spent");
+    }
+
+    function test_OgPaysForEverythingPastTheFreeTwo() public {
+        nft.mint{value: 18 * price}(20, voucher(address(this)));
+        require(nft.mintedBy(address(this)) == 20, "twenty minted");
+        require(address(nft).balance == 18 * price, "eighteen paid, two free");
+    }
+
+    function test_PublicWalletPaysForEveryToken() public {
+        try nft.mint{value: 0}(1, NO_VOUCHER) {
+            revert("public mint should not be free");
+        } catch Error(string memory reason) {
+            require(eq(reason, "WRONG_PRICE"), "public free-mint reason");
+        }
+        nft.mint{value: 20 * price}(20, NO_VOUCHER);
+        nft.mint{value: 20 * price}(20, NO_VOUCHER);
+        require(nft.mintedBy(address(this)) == 40, "no cap without a voucher either");
+        require(nft.freeMintedBy(address(this)) == 0, "no free tokens without a voucher");
+        require(address(nft).balance == 40 * price, "all forty paid");
+    }
+
+    function test_FreeAllowanceSurvivesEarlierPaidMints() public {
+        // wallet buys first, produces a voucher later: its 2 free mints are
+        // still unspent, so mintedBy alone can't stand in for freeMintedBy
+        nft.mint{value: 3 * price}(3, NO_VOUCHER);
+        nft.mint{value: 0}(2, voucher(address(this)));
+        require(nft.mintedBy(address(this)) == 5, "five minted");
+        require(nft.freeMintedBy(address(this)) == 2, "free allowance honored late");
+        require(address(nft).balance == 3 * price, "only the first three paid");
+    }
+
+    function test_PriceForQuotesTheExactValue() public {
+        address me = address(this);
+        bytes memory sig = voucher(me);
+        require(nft.priceFor(me, 2, sig) == 0, "two free");
+        require(nft.priceFor(me, 5, sig) == 3 * price, "two free then three paid");
+        require(nft.priceFor(me, 5, NO_VOUCHER) == 5 * price, "public pays for all");
+        nft.mint{value: nft.priceFor(me, 5, sig)}(5, sig);
+        require(nft.priceFor(me, 3, sig) == 3 * price, "allowance now spent");
+    }
+
     // ------------------------- helpers -------------------------
+
+    /// A signature that isn't a valid voucher for this wallet grants no free
+    /// mint, but no longer blocks minting: the wallet just pays public price.
+    function assertNoFreeMint(bytes memory sig, string memory what) internal {
+        try nft.mint{value: 0}(1, sig) {
+            revert(string(abi.encodePacked(what, " should not mint free")));
+        } catch Error(string memory reason) {
+            require(eq(reason, "WRONG_PRICE"), "expected WRONG_PRICE");
+        }
+        nft.mint{value: price}(1, sig);
+        require(nft.freeMintedBy(address(this)) == 0, "no free allowance consumed");
+        require(nft.mintedBy(address(this)) == 1, "paid mint went through");
+    }
 
     function label(uint256 presenceNibble) internal pure returns (string memory) {
         return ArtPlumberRenderer.plungersLabel(

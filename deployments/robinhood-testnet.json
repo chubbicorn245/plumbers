@@ -1,0 +1,19 @@
+[
+  {
+    "address": "0x64b7363007ce9a918a97fF1102672307215BDEf7",
+    "network": "Robinhood Chain Testnet",
+    "chainId": 46630,
+    "creationTx": "0x466c8175a0a5b5932d74412a4f32a6853547b43e658e506f8c48a673dad9085e",
+    "block": 111056094,
+    "deployedAt": "2026-09-01T08:36:50Z",
+    "commit": "0c39a91",
+    "constants": {
+      "MAX_SUPPLY": 2000,
+      "MAX_PER_TX": 20,
+      "FREE_ALLOWANCE": 2,
+      "MINT_PRICE": "0.003 ether"
+    },
+    "explorer": "https://explorer.testnet.chain.robinhood.com/address/0x64b7363007ce9a918a97fF1102672307215BDEf7",
+    "verified": true
+  }
+]

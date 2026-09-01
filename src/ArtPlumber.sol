@@ -107,14 +107,21 @@ interface IERC721Receiver {
 ///         ArtPlumberRenderer for the exact odds and which seed nibble
 ///         determines which part's color.
 ///
-///         ELIGIBILITY: only wallets that sent an Ethereum mainnet
-///         transaction before November 2021 can mint. A contract can't
-///         read mainnet history (least of all from another chain), so the
-///         check happens off-chain - nonce > 0 at mainnet block 13527858,
-///         the last block before 2021-11-01 00:00 UTC - and is attested
-///         with an EIP-712 voucher signed by `signer`. The voucher is
-///         bound to one wallet, this chain, and this contract, so it
-///         can't be borrowed or replayed elsewhere.
+///         OG DISCOUNT: anyone may mint, but wallets that sent an
+///         Ethereum mainnet transaction before November 2021 get their
+///         first FREE_ALLOWANCE tokens free; everyone else pays
+///         MINT_PRICE for every token. A contract can't read mainnet
+///         history (least of all from another chain), so the check
+///         happens off-chain - nonce > 0 at mainnet block 13527858, the
+///         last block before 2021-11-01 00:00 UTC - and is attested with
+///         an EIP-712 voucher signed by `signer`. The voucher is bound to
+///         one wallet, this chain, and this contract, so it can't be
+///         borrowed or replayed elsewhere. Minting without a voucher is
+///         not an error: it is simply the full-price path.
+///
+///         NO WALLET CAP: a wallet may mint as much of MAX_SUPPLY as it
+///         wants. MAX_PER_TX bounds a single call so the mint loop can't
+///         exceed the block gas limit, not how much anyone may own.
 contract ArtPlumber is ERC721 {
     using ArtPlumberRenderer for ArtPlumberRenderer.Traits;
 
@@ -125,15 +132,23 @@ contract ArtPlumber is ERC721 {
         "There is no team and there is no roadmap. They are completely useless and exist "
         "for entertainment purposes only.";
 
-    uint256 public constant MAX_SUPPLY = 1024; // adjust before deploying
+    uint256 public constant MAX_SUPPLY = 2000;
 
-    /// @notice Max mints per wallet, total across all transactions. A
-    ///         single mint() call takes 1-3 tokens. (Determined hunters can
-    ///         still use multiple wallets - this is friction, not a wall.)
-    uint256 public constant WALLET_LIMIT = 3;
+    /// @notice Most tokens one mint() call may take. There is NO per-wallet
+    ///         cap - a wallet may mint as much of the supply as it likes -
+    ///         so this exists purely as a gas guard: minting is a loop, and
+    ///         an unbounded quantity would exceed the block gas limit. Want
+    ///         more than this? Send another transaction.
+    uint256 public constant MAX_PER_TX = 20;
 
-    /// @notice Price per token, paid in the chain's native token (ETH).
-    uint256 public constant MINT_PRICE = 0.0069 ether;
+    /// @notice Tokens an OG wallet mints for free before paying. This is the
+    ///         only per-wallet limit in the contract.
+    uint256 public constant FREE_ALLOWANCE = 2;
+
+    /// @notice Price per paid token, in the chain's native token (ETH).
+    ///         Every token a public wallet mints costs this; for an OG
+    ///         wallet only those past FREE_ALLOWANCE do.
+    uint256 public constant MINT_PRICE = 0.003 ether;
 
     /// @notice Where withdraw() sends the mint proceeds. Immutable, like
     ///         everything else here: no owner, no rug surface.
@@ -156,8 +171,14 @@ contract ArtPlumber is ERC721 {
 
     uint256 public totalSupply;
 
-    /// @notice How many tokens each address has minted.
+    /// @notice How many tokens each address has minted. A counter for
+    ///         display and analytics only - it gates nothing.
     mapping(address => uint256) public mintedBy;
+
+    /// @notice How much of its FREE_ALLOWANCE each address has used. Kept
+    ///         separate from mintedBy so a wallet that paid before it had a
+    ///         voucher can still claim its free tokens afterwards.
+    mapping(address => uint256) public freeMintedBy;
 
     /// @notice The mint seed of each token. The seed alone fully determines
     ///         the artwork: nibbles 0-5 index the shared 16-color palette,
@@ -196,14 +217,32 @@ contract ArtPlumber is ERC721 {
         );
     }
 
-    /// @notice Mint `quantity` tokens (1-3) at MINT_PRICE each. Every
-    ///         token's seed - and therefore every color and the plunger
-    ///         loadout - is fixed here and can never change.
-    /// @param  quantity  1-3 tokens; mintedBy[msg.sender] can never
-    ///         exceed WALLET_LIMIT across all calls.
+    /// @notice What `wallet` must send to mint `quantity` tokens with
+    ///         `signature`. Free tokens are spent first, so the quote falls
+    ///         as an OG's allowance is consumed. Call this and pass the
+    ///         result as msg.value - mint() requires an exact match.
+    function priceFor(address wallet, uint256 quantity, bytes calldata signature)
+        external
+        view
+        returns (uint256)
+    {
+        return (quantity - _freeAllotment(wallet, quantity, signature)) * MINT_PRICE;
+    }
+
+    /// @notice Mint `quantity` tokens (1-MAX_PER_TX). An OG wallet's first
+    ///         FREE_ALLOWANCE tokens are free and the rest cost MINT_PRICE
+    ///         each; without a valid voucher every token costs MINT_PRICE.
+    ///         There is no per-wallet cap: mint as many as you like, up to
+    ///         MAX_PER_TX per transaction, until MAX_SUPPLY runs out.
+    ///         Every token's seed - and therefore every color and the
+    ///         plunger loadout - is fixed here and can never change.
+    /// @param  quantity  1-MAX_PER_TX tokens. Only the per-transaction gas
+    ///         guard and MAX_SUPPLY bound how much a wallet can mint.
     /// @param  signature 65-byte EIP-712 voucher (r||s||v) for msg.sender,
-    ///         signed by `signer`. Reusable by the same wallet until it
-    ///         hits WALLET_LIMIT; useless to anyone else.
+    ///         signed by `signer`, or empty to mint at full price. Reusable
+    ///         by the same wallet until its free allowance is gone; useless
+    ///         to anyone else. An invalid voucher doesn't revert - it just
+    ///         earns no discount.
     /// @return firstId the first minted id; the batch is firstId..firstId+quantity-1.
     /// @dev    prevrandao + minter + id keeps the roll unpredictable enough
     ///         for a fun hunt; ids differ within a batch so every token
@@ -214,11 +253,11 @@ contract ArtPlumber is ERC721 {
         payable
         returns (uint256 firstId)
     {
-        require(quantity > 0 && quantity <= WALLET_LIMIT, "BAD_QUANTITY");
-        require(mintedBy[msg.sender] + quantity <= WALLET_LIMIT, "WALLET_LIMIT");
-        require(msg.value == quantity * MINT_PRICE, "WRONG_PRICE");
-        require(_isValidVoucher(msg.sender, signature), "NOT_ELIGIBLE");
+        require(quantity > 0 && quantity <= MAX_PER_TX, "BAD_QUANTITY");
+        uint256 freeNow = _freeAllotment(msg.sender, quantity, signature);
+        require(msg.value == (quantity - freeNow) * MINT_PRICE, "WRONG_PRICE");
         require(totalSupply + quantity <= MAX_SUPPLY, "SOLD_OUT");
+        if (freeNow > 0) freeMintedBy[msg.sender] += freeNow;
         mintedBy[msg.sender] += quantity;
         firstId = totalSupply + 1;
         for (uint256 i = 0; i < quantity; i++) {
@@ -234,6 +273,20 @@ contract ArtPlumber is ERC721 {
     function withdraw() external {
         (bool ok,) = payout.call{value: address(this).balance}("");
         require(ok, "WITHDRAW_FAILED");
+    }
+
+    /// @dev How many of `quantity` this wallet takes from its free
+    ///      allowance. Zero without a valid voucher, or once spent.
+    function _freeAllotment(address wallet, uint256 quantity, bytes calldata signature)
+        internal
+        view
+        returns (uint256)
+    {
+        if (!_isValidVoucher(wallet, signature)) return 0;
+        uint256 used = freeMintedBy[wallet];
+        if (used >= FREE_ALLOWANCE) return 0;
+        uint256 left = FREE_ALLOWANCE - used;
+        return quantity < left ? quantity : left;
     }
 
     function _isValidVoucher(address wallet, bytes calldata signature)

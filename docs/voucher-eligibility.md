@@ -1,9 +1,12 @@
 # How voucher eligibility works
 
-Only wallets that sent an Ethereum mainnet transaction before November
-2021 can mint. This document explains the whole mechanism — why it's
-built this way, what exactly gets signed, how the contract checks it,
-and what can and cannot be faked.
+Wallets that sent an Ethereum mainnet transaction before November 2021
+mint their first two plumbers free; everyone else pays 0.003 ETH per
+token. The voucher is what proves a wallet is in that first group — it
+is a **discount, not a gate**, and minting without one is a normal
+full-price mint, not an error. This document explains the whole
+mechanism — why it's built this way, what exactly gets signed, how the
+contract checks it, and what can and cannot be faked.
 
 ## Why a voucher at all
 
@@ -100,10 +103,17 @@ precompile.
 - **Replay-proof.** The domain pins chain id and contract address, so a
   voucher for one deployment verifies nowhere else — not on another
   chain, not on a redeploy, not on a copycat contract.
-- **Reusable but capped.** Vouchers aren't consumed; the same wallet can
-  reuse one across mints. That's fine because `WALLET_LIMIT` is enforced
-  on-chain — eligibility and quantity are separate concerns, and only
-  the contract enforces quantity.
+- **Reusable but bounded.** Vouchers aren't consumed; the same wallet
+  can reuse one across mints. That's fine because `freeMintedBy` is
+  enforced on-chain — a voucher stops earning discounts once the
+  wallet's 2 free tokens are gone, and every token after that is full
+  price. There is no per-wallet cap, so a voucher's entire power is
+  those first two tokens.
+- **Fails soft.** An absent, malformed, forged, or borrowed voucher does
+  not revert the mint. `_freeAllotment` simply returns 0 and the wallet
+  is quoted full price. Since `msg.value` must match the quote exactly,
+  an OG whose backend hands them a bad signature gets a `WRONG_PRICE`
+  revert rather than being silently charged.
 - **Ungameable criterion.** Eligibility reads state frozen in 2021;
   there is no transaction anyone can send today to alter it.
 
