@@ -143,6 +143,7 @@ test/ArtPlumber.t.sol       foundry tests (no forge-std needed)
 scripts/extract_grid.py     pixel-grid extractor for new source images
 scripts/build_svg.py        regenerates the SVG segments from the pixel grid
 scripts/gallery.py          builds art/gallery.html with simulated mints
+scripts/deploy-testnet.sh   guarded deploy + verify to Robinhood testnet
 art/*.svg                   previews of the variants
 ```
 
@@ -234,6 +235,29 @@ Both contracts are dependency-free, so you can also paste
 
 Robinhood Chain is an Arbitrum Orbit L2 with ETH as the gas token; the
 testnet is standard Foundry territory:
+
+The quickest path is the wrapper script, which validates everything it can
+before spending and reads the immutables back off-chain afterwards:
+
+```sh
+# one-time: generate the eligibility signer key. Run this yourself and put
+# the private key straight into a secret manager - it cannot be rotated.
+cast wallet new
+
+export PRIVATE_KEY=<deployer key, funded from the faucet>
+export SIGNER_ADDRESS=<address from cast wallet new>
+export PAYOUT_ADDRESS=<where withdraw() sends mint proceeds>
+
+./scripts/deploy-testnet.sh
+```
+
+It refuses to spend on a malformed or zero signer/payout, on the wrong
+chain, or with an unfunded deployer; shows the permanent choices and waits
+for you to type `deploy`; then verifies on Blockscout and prints the
+`NEXT_PUBLIC_ART_PLUMBER_ADDRESS` line for the website. Deployment costs
+about 0.00004 ETH at current testnet gas.
+
+The same thing by hand:
 
 ```sh
 # network
