@@ -146,14 +146,39 @@ scripts/gallery.py          builds art/gallery.html with simulated mints
 art/*.svg                   previews of the variants
 ```
 
-## Mint eligibility
+## Mint price and the OG free mint
 
-Only wallets that **sent an Ethereum mainnet transaction before November
-2021** can mint. A contract can't read mainnet history (least of all from
-another chain), so the check happens off-chain and is attested with a
-signed voucher. **The full mechanism — what gets signed, how the contract
-verifies it, the security properties, and the trust model — is documented
-in [docs/voucher-eligibility.md](docs/voucher-eligibility.md).** The short
+The collection is **2000** plumbers, and **anyone can mint**. What the
+eligibility check buys you is a discount, not entry:
+
+| Wallet | Free tokens | Paid tokens | Total | Cost for the full allowance |
+|---|---|---|---|---|
+| **OG** (mainnet tx before Nov 2021) | 2 | 8 @ 0.002 ETH | 10 | 0.016 ETH |
+| **Everyone else** | 0 | 10 @ 0.002 ETH | 10 | 0.02 ETH |
+
+`WALLET_LIMIT` (10) is the same for both — the free tokens are carved out
+of that cap, not added to it. Free tokens are always spent first, so a
+single `mint()` call can be part free and part paid: an OG minting 5 at
+once sends `3 * MINT_PRICE`.
+
+`msg.value` must match **exactly**, so quote it from the contract rather
+than computing it in the frontend:
+
+```solidity
+priceFor(address wallet, uint256 quantity, bytes signature) -> uint256
+```
+
+`freeMintedBy(wallet)` reports how much of the 2-token free allowance a
+wallet has used. It is tracked separately from `mintedBy`, so a wallet
+that paid before it had a voucher can still claim its free tokens later.
+
+### Proving OG status
+
+A contract can't read mainnet history (least of all from another chain),
+so the check happens off-chain and is attested with a signed voucher.
+**The full mechanism — what gets signed, how the contract verifies it,
+the security properties, and the trust model — is documented in
+[docs/voucher-eligibility.md](docs/voucher-eligibility.md).** The short
 version:
 
 1. **Check:** a wallet qualifies iff its nonce at mainnet block
@@ -163,13 +188,13 @@ version:
    (domain `{name: "Art Plumber", version: "1", chainId, contract}`,
    message `MintVoucher(address wallet)`). `voucherDigest(wallet)` on the
    contract returns the exact digest; standard `signTypedData` matches it.
-3. **Mint:** `mint(quantity, signature)` takes 1-3 tokens at `MINT_PRICE`
-   (0.0069 ETH) each — `msg.value` must equal `quantity * MINT_PRICE` —
-   and verifies the voucher with `ecrecover` (no new dependencies). The
-   voucher is bound to one wallet, this chain, and this contract — it
-   can't be borrowed or replayed — and stays reusable by its wallet until
-   `WALLET_LIMIT` (3 total, across all calls) is hit, which the contract
-   enforces regardless.
+3. **Mint:** `mint(quantity, signature)` takes 1-10 tokens and verifies
+   the voucher with `ecrecover` (no new dependencies). The voucher is
+   bound to one wallet, this chain, and this contract — it can't be
+   borrowed or replayed — and stays reusable by its wallet until the free
+   allowance is gone. **An absent or invalid voucher is not an error:**
+   it simply earns no discount, and the wallet pays full price for every
+   token. `WALLET_LIMIT` is enforced on-chain regardless.
 
 The `signer` and `payout` addresses are immutable constructor arguments:
 no owner, no rotation. `withdraw()` is callable by anyone but only ever
@@ -186,8 +211,15 @@ forge test
 anvil &
 forge create src/ArtPlumber.sol:ArtPlumber --private-key <deploy-key> --broadcast \
   --constructor-args <signer-address> <payout-address>
+
+# OG wallet, 3 tokens: 2 free + 1 paid = 0.002 ETH
 cast send <addr> "mint(uint256,bytes)" 3 <voucher-signature> \
-  --value 0.0207ether --private-key <minter-key>
+  --value 0.002ether --private-key <minter-key>
+
+# no voucher, 3 tokens: full price = 0.006 ETH
+cast send <addr> "mint(uint256,bytes)" 3 0x --value 0.006ether \
+  --private-key <minter-key>
+
 cast call <addr> "tokenURI(uint256)(string)" 1
 ```
 
@@ -246,7 +278,8 @@ mainnet RPC/explorer URLs and chain id.)
 ### Export the ABI for the mint site
 
 The website needs the ABI to call `mint(uint256,bytes)` (payable) and
-the views with wagmi/viem:
+the views with wagmi/viem — in particular `priceFor`, which gives the
+exact `msg.value` for a wallet's next mint:
 
 ```sh
 forge inspect ArtPlumber abi --json > artplumber-abi.json
@@ -273,11 +306,11 @@ right once, there is no owner and no second chance short of redeploying:
       can't be rotated.
 - [ ] **Pick the payout address** — `withdraw()` can only ever send the
       mint proceeds there.
-- [ ] **Confirm the constants** in `ArtPlumber.sol`: `MAX_SUPPLY`
-      (currently 1024 with an "adjust before deploying" note — this is
-      the moment to lock it), `WALLET_LIMIT` (3 total per wallet; each
-      `mint(uint256,bytes)` call takes 1-3), and `MINT_PRICE`
-      (0.0069 ETH per token).
+- [ ] **Confirm the constants** in `ArtPlumber.sol`: `MAX_SUPPLY` (2000),
+      `WALLET_LIMIT` (10 total per wallet; each `mint(uint256,bytes)`
+      call takes 1-10), `FREE_ALLOWANCE` (2 free tokens per OG wallet,
+      carved out of the 10), and `MINT_PRICE` (0.002 ETH per paid
+      token). All four are permanent once deployed.
 - [ ] **Testnet dry run** — the sections above walk the exact Robinhood
       testnet flow: faucet → deploy → verify on Blockscout → mint with a
       real voucher. Cheap insurance before anything real.
