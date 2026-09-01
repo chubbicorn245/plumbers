@@ -1,0 +1,18 @@
+[
+  {
+    "address": "0x64b7363007ce9a918a97fF1102672307215BDEf7",
+    "network": "Robinhood Chain",
+    "chainId": 4663,
+    "creationTx": "0xbc7f892c52ce9efc49a35cda9290047051dc8f55928f054b5f655a759c97cb8b",
+    "block": 52119645,
+    "deployedAt": "2026-09-01T23:43:19Z",
+    "commit": "673d7a7",
+    "constants": {
+      "MAX_SUPPLY": 2000,
+      "MAX_PER_TX": 20,
+      "FREE_ALLOWANCE": 2,
+      "MINT_PRICE_WEI": 2000000000000000
+    },
+    "explorer": "https://robinhoodchain.blockscout.com/address/0x64b7363007ce9a918a97fF1102672307215BDEf7"
+  }
+]
