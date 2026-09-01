@@ -143,7 +143,7 @@ test/ArtPlumber.t.sol       foundry tests (no forge-std needed)
 scripts/extract_grid.py     pixel-grid extractor for new source images
 scripts/build_svg.py        regenerates the SVG segments from the pixel grid
 scripts/gallery.py          builds art/gallery.html with simulated mints
-scripts/deploy-testnet.sh   guarded deploy + verify to Robinhood testnet
+scripts/deploy.sh           guarded deploy + verify (NETWORK=testnet|mainnet)
 deployments/*.json          deployed addresses, one file per network
 art/*.svg                   previews of the variants
 ```
@@ -249,13 +249,13 @@ export PRIVATE_KEY=<deployer key, funded from the faucet>
 export SIGNER_ADDRESS=<address from cast wallet new>
 export PAYOUT_ADDRESS=<where withdraw() sends mint proceeds>
 
-./scripts/deploy-testnet.sh
+./scripts/deploy.sh          # NETWORK=mainnet for the real thing
 ```
 
 It refuses to spend on a malformed or zero signer/payout, on the wrong
 chain, or with an unfunded deployer; shows the permanent choices and waits
 for you to type `deploy`; then reads the immutables back off-chain, appends
-the address to `deployments/robinhood-testnet.json`, verifies on Blockscout,
+the address to `deployments/robinhood-<network>.json`, verifies on Blockscout,
 and prints the `NEXT_PUBLIC_ART_PLUMBER_ADDRESS` line for the website.
 Deployment costs about 0.00004 ETH at current testnet gas.
 

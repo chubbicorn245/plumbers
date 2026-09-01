@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Deploy ArtPlumber to Robinhood Chain testnet.
+# Deploy ArtPlumber to Robinhood Chain.
+#
+#   NETWORK=testnet|mainnet   which chain to deploy to (default: testnet)
 #
 # The constructor arguments are IMMUTABLE: there is no owner and no setters,
 # so `signer` and `payout` can never be changed. This script validates
@@ -15,9 +17,32 @@
 #
 set -euo pipefail
 
-RPC_URL="${RPC_URL:-https://rpc.testnet.chain.robinhood.com}"
-EXPLORER="${EXPLORER:-https://explorer.testnet.chain.robinhood.com}"
-EXPECTED_CHAIN_ID=46630
+NETWORK="${NETWORK:-testnet}"
+case "$NETWORK" in
+  testnet)
+    DEFAULT_RPC=https://rpc.testnet.chain.robinhood.com
+    DEFAULT_EXPLORER=https://explorer.testnet.chain.robinhood.com
+    EXPECTED_CHAIN_ID=46630
+    NETWORK_LABEL="Robinhood Chain Testnet"
+    FUNDING_HINT="fund it at https://faucet.testnet.chain.robinhood.com"
+    ;;
+  mainnet)
+    DEFAULT_RPC=https://rpc.mainnet.chain.robinhood.com
+    # Blockscout, behind Cloudflare - verification may be challenged and
+    # need a retry or a manual submit. The deploy itself is unaffected.
+    DEFAULT_EXPLORER=https://robinhoodchain.blockscout.com
+    EXPECTED_CHAIN_ID=4663
+    NETWORK_LABEL="Robinhood Chain"
+    FUNDING_HINT="it needs real ETH on Robinhood Chain (~0.002 covers deployment)"
+    ;;
+  *)
+    echo "error: NETWORK must be testnet or mainnet, got: $NETWORK" >&2
+    exit 1
+    ;;
+esac
+
+RPC_URL="${RPC_URL:-$DEFAULT_RPC}"
+EXPLORER="${EXPLORER:-$DEFAULT_EXPLORER}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -41,11 +66,11 @@ chain_id=$(cast chain-id --rpc-url "$RPC_URL")
 deployer=$(cast wallet address --private-key "$PRIVATE_KEY")
 balance=$(cast balance "$deployer" --rpc-url "$RPC_URL")
 [ "$balance" != "0" ] \
-  || die "deployer $deployer has no testnet ETH — fund it at https://faucet.testnet.chain.robinhood.com"
+  || die "deployer $deployer has no ETH on $NETWORK_LABEL — $FUNDING_HINT"
 
 echo "About to deploy ArtPlumber — these choices are PERMANENT:"
 echo
-echo "  network   Robinhood Chain testnet (chain $chain_id)"
+echo "  network   $NETWORK_LABEL (chain $chain_id)"
 echo "  deployer  $deployer"
 echo "  balance   $(cast from-wei "$balance") ETH"
 echo "  signer    $SIGNER_ADDRESS   (cannot be rotated; a leak means redeploying)"
@@ -55,8 +80,15 @@ echo "  supply    $(grep -o 'MAX_SUPPLY = [0-9]*' src/ArtPlumber.sol | grep -o '
 echo "  price     $(grep -o 'MINT_PRICE = [0-9.]* ether' src/ArtPlumber.sol)"
 echo "  free      $(grep -o 'FREE_ALLOWANCE = [0-9]*' src/ArtPlumber.sol | grep -o '[0-9]*') per OG wallet, no per-wallet cap"
 echo
-read -r -p 'Type "deploy" to continue: ' confirm
-[ "$confirm" = "deploy" ] || die "aborted"
+if [ "$NETWORK" = "mainnet" ]; then
+  echo "  *** THIS IS MAINNET. Real funds; the signer cannot be rotated. ***"
+  echo
+  read -r -p 'Type "deploy to mainnet" to continue: ' confirm
+  [ "$confirm" = "deploy to mainnet" ] || die "aborted"
+else
+  read -r -p 'Type "deploy" to continue: ' confirm
+  [ "$confirm" = "deploy" ] || die "aborted"
+fi
 
 forge create --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --broadcast \
   --json src/ArtPlumber.sol:ArtPlumber \
@@ -80,13 +112,14 @@ echo "verified on-chain: signer and payout match"
 # Record the address before anything else can fail. forge create writes no
 # broadcast artifact, so without this the address survives only in the
 # operator's scrollback.
-record=deployments/robinhood-testnet.json
+record="deployments/robinhood-$NETWORK.json"
 mkdir -p deployments
 [ -f "$record" ] || echo '[]' > "$record"
 
 RECORD_FILE="$record" \
 ADDRESS="$address" \
 CHAIN_ID="$chain_id" \
+NETWORK_LABEL="$NETWORK_LABEL" \
 CREATION_TX="$creation_tx" \
 BLOCK="$([ -n "$creation_tx" ] && cast receipt "$creation_tx" --rpc-url "$RPC_URL" blockNumber 2>/dev/null || echo '')" \
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
@@ -111,7 +144,7 @@ with open(path) as f:
 
 records.append({
     "address": os.environ["ADDRESS"],
-    "network": "Robinhood Chain Testnet",
+    "network": os.environ["NETWORK_LABEL"],
     "chainId": int(os.environ["CHAIN_ID"]),
     "creationTx": os.environ.get("CREATION_TX") or None,
     "block": num("BLOCK"),
