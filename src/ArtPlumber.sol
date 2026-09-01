@@ -148,7 +148,7 @@ contract ArtPlumber is ERC721 {
     /// @notice Price per paid token, in the chain's native token (ETH).
     ///         Every token a public wallet mints costs this; for an OG
     ///         wallet only those past FREE_ALLOWANCE do.
-    uint256 public constant MINT_PRICE = 0.003 ether;
+    uint256 public constant MINT_PRICE = 0.002 ether;
 
     /// @notice Where withdraw() sends the mint proceeds. Immutable, like
     ///         everything else here: no owner, no rug surface.
