@@ -1,7 +1,7 @@
 # How voucher eligibility works
 
 Wallets that sent an Ethereum mainnet transaction before November 2021
-mint their first two plumbers free; everyone else pays 0.003 ETH per
+mint their first two plumbers free; everyone else pays 0.002 ETH per
 token. The voucher is what proves a wallet is in that first group — it
 is a **discount, not a gate**, and minting without one is a normal
 full-price mint, not an error. This document explains the whole

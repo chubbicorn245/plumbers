@@ -316,7 +316,7 @@ contract ArtPlumberTest {
         require(nft.MAX_SUPPLY() == 2000, "collection size");
         require(nft.MAX_PER_TX() == 20, "gas guard per transaction");
         require(nft.FREE_ALLOWANCE() == 2, "free tokens per OG wallet");
-        require(nft.MINT_PRICE() == 0.003 ether, "price per paid token");
+        require(nft.MINT_PRICE() == 0.002 ether, "price per paid token");
     }
 
     function test_OgFirstTwoTokensAreFree() public {

@@ -155,8 +155,8 @@ eligibility check buys you is a discount, not entry:
 
 | Wallet | Free tokens | Every token after that | Total it may mint |
 |---|---|---|---|
-| **OG** (mainnet tx before Nov 2021) | 2 | 0.003 ETH | unlimited |
-| **Everyone else** | 0 | 0.003 ETH | unlimited |
+| **OG** (mainnet tx before Nov 2021) | 2 | 0.002 ETH | unlimited |
+| **Everyone else** | 0 | 0.002 ETH | unlimited |
 
 **There is no per-wallet cap.** One wallet may mint as much of the 2000
 as it likes; the free two are the only per-wallet limit in the contract.
@@ -218,12 +218,12 @@ anvil &
 forge create src/ArtPlumber.sol:ArtPlumber --private-key <deploy-key> --broadcast \
   --constructor-args <signer-address> <payout-address>
 
-# OG wallet, 3 tokens: 2 free + 1 paid = 0.003 ETH
+# OG wallet, 3 tokens: 2 free + 1 paid = 0.002 ETH
 cast send <addr> "mint(uint256,bytes)" 3 <voucher-signature> \
-  --value 0.003ether --private-key <minter-key>
+  --value 0.002ether --private-key <minter-key>
 
-# no voucher, 3 tokens: full price = 0.009 ETH
-cast send <addr> "mint(uint256,bytes)" 3 0x --value 0.009ether \
+# no voucher, 3 tokens: full price = 0.006 ETH
+cast send <addr> "mint(uint256,bytes)" 3 0x --value 0.006ether \
   --private-key <minter-key>
 
 cast call <addr> "tokenURI(uint256)(string)" 1
@@ -342,7 +342,7 @@ right once, there is no owner and no second chance short of redeploying:
 - [ ] **Confirm the constants** in `ArtPlumber.sol`: `MAX_SUPPLY` (2000),
       `MAX_PER_TX` (20 per call — a gas guard, not an allocation limit;
       there is no per-wallet cap at all), `FREE_ALLOWANCE` (2 free tokens
-      per OG wallet), and `MINT_PRICE` (0.003 ETH per paid token). All
+      per OG wallet), and `MINT_PRICE` (0.002 ETH per paid token). All
       four are permanent once deployed. Note that with no wallet cap a
       single buyer can take the entire supply — that is intended.
 - [ ] **Testnet dry run** — the sections above walk the exact Robinhood
