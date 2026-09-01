@@ -151,15 +151,19 @@ art/*.svg                   previews of the variants
 The collection is **2000** plumbers, and **anyone can mint**. What the
 eligibility check buys you is a discount, not entry:
 
-| Wallet | Free tokens | Paid tokens | Total | Cost for the full allowance |
-|---|---|---|---|---|
-| **OG** (mainnet tx before Nov 2021) | 2 | 8 @ 0.002 ETH | 10 | 0.016 ETH |
-| **Everyone else** | 0 | 10 @ 0.002 ETH | 10 | 0.02 ETH |
+| Wallet | Free tokens | Every token after that | Total it may mint |
+|---|---|---|---|
+| **OG** (mainnet tx before Nov 2021) | 2 | 0.003 ETH | unlimited |
+| **Everyone else** | 0 | 0.003 ETH | unlimited |
 
-`WALLET_LIMIT` (10) is the same for both — the free tokens are carved out
-of that cap, not added to it. Free tokens are always spent first, so a
-single `mint()` call can be part free and part paid: an OG minting 5 at
-once sends `3 * MINT_PRICE`.
+**There is no per-wallet cap.** One wallet may mint as much of the 2000
+as it likes; the free two are the only per-wallet limit in the contract.
+`MAX_PER_TX` (20) bounds a single `mint()` call — minting is a loop, and
+an unbounded quantity would exceed the block gas limit — so larger hauls
+just take more transactions.
+
+Free tokens are always spent first, so a single call can be part free
+and part paid: an OG minting 5 at once sends `3 * MINT_PRICE`.
 
 `msg.value` must match **exactly**, so quote it from the contract rather
 than computing it in the frontend:
@@ -188,13 +192,13 @@ version:
    (domain `{name: "Art Plumber", version: "1", chainId, contract}`,
    message `MintVoucher(address wallet)`). `voucherDigest(wallet)` on the
    contract returns the exact digest; standard `signTypedData` matches it.
-3. **Mint:** `mint(quantity, signature)` takes 1-10 tokens and verifies
+3. **Mint:** `mint(quantity, signature)` takes 1-20 tokens and verifies
    the voucher with `ecrecover` (no new dependencies). The voucher is
    bound to one wallet, this chain, and this contract — it can't be
    borrowed or replayed — and stays reusable by its wallet until the free
    allowance is gone. **An absent or invalid voucher is not an error:**
    it simply earns no discount, and the wallet pays full price for every
-   token. `WALLET_LIMIT` is enforced on-chain regardless.
+   token.
 
 The `signer` and `payout` addresses are immutable constructor arguments:
 no owner, no rotation. `withdraw()` is callable by anyone but only ever
@@ -212,12 +216,12 @@ anvil &
 forge create src/ArtPlumber.sol:ArtPlumber --private-key <deploy-key> --broadcast \
   --constructor-args <signer-address> <payout-address>
 
-# OG wallet, 3 tokens: 2 free + 1 paid = 0.002 ETH
+# OG wallet, 3 tokens: 2 free + 1 paid = 0.003 ETH
 cast send <addr> "mint(uint256,bytes)" 3 <voucher-signature> \
-  --value 0.002ether --private-key <minter-key>
+  --value 0.003ether --private-key <minter-key>
 
-# no voucher, 3 tokens: full price = 0.006 ETH
-cast send <addr> "mint(uint256,bytes)" 3 0x --value 0.006ether \
+# no voucher, 3 tokens: full price = 0.009 ETH
+cast send <addr> "mint(uint256,bytes)" 3 0x --value 0.009ether \
   --private-key <minter-key>
 
 cast call <addr> "tokenURI(uint256)(string)" 1
@@ -307,10 +311,11 @@ right once, there is no owner and no second chance short of redeploying:
 - [ ] **Pick the payout address** — `withdraw()` can only ever send the
       mint proceeds there.
 - [ ] **Confirm the constants** in `ArtPlumber.sol`: `MAX_SUPPLY` (2000),
-      `WALLET_LIMIT` (10 total per wallet; each `mint(uint256,bytes)`
-      call takes 1-10), `FREE_ALLOWANCE` (2 free tokens per OG wallet,
-      carved out of the 10), and `MINT_PRICE` (0.002 ETH per paid
-      token). All four are permanent once deployed.
+      `MAX_PER_TX` (20 per call — a gas guard, not an allocation limit;
+      there is no per-wallet cap at all), `FREE_ALLOWANCE` (2 free tokens
+      per OG wallet), and `MINT_PRICE` (0.003 ETH per paid token). All
+      four are permanent once deployed. Note that with no wallet cap a
+      single buyer can take the entire supply — that is intended.
 - [ ] **Testnet dry run** — the sections above walk the exact Robinhood
       testnet flow: faucet → deploy → verify on Blockscout → mint with a
       real voucher. Cheap insurance before anything real.

@@ -118,6 +118,10 @@ interface IERC721Receiver {
 ///         one wallet, this chain, and this contract, so it can't be
 ///         borrowed or replayed elsewhere. Minting without a voucher is
 ///         not an error: it is simply the full-price path.
+///
+///         NO WALLET CAP: a wallet may mint as much of MAX_SUPPLY as it
+///         wants. MAX_PER_TX bounds a single call so the mint loop can't
+///         exceed the block gas limit, not how much anyone may own.
 contract ArtPlumber is ERC721 {
     using ArtPlumberRenderer for ArtPlumberRenderer.Traits;
 
@@ -130,20 +134,21 @@ contract ArtPlumber is ERC721 {
 
     uint256 public constant MAX_SUPPLY = 2000;
 
-    /// @notice Max mints per wallet, total across all transactions, for OG
-    ///         and public wallets alike. A single mint() call may take the
-    ///         whole allowance. (Determined hunters can still use multiple
-    ///         wallets - this is friction, not a wall.)
-    uint256 public constant WALLET_LIMIT = 10;
+    /// @notice Most tokens one mint() call may take. There is NO per-wallet
+    ///         cap - a wallet may mint as much of the supply as it likes -
+    ///         so this exists purely as a gas guard: minting is a loop, and
+    ///         an unbounded quantity would exceed the block gas limit. Want
+    ///         more than this? Send another transaction.
+    uint256 public constant MAX_PER_TX = 20;
 
-    /// @notice Tokens an OG wallet mints for free before paying. Carved out
-    ///         of WALLET_LIMIT, not added to it: an OG gets 2 free + 8 paid.
+    /// @notice Tokens an OG wallet mints for free before paying. This is the
+    ///         only per-wallet limit in the contract.
     uint256 public constant FREE_ALLOWANCE = 2;
 
     /// @notice Price per paid token, in the chain's native token (ETH).
     ///         Every token a public wallet mints costs this; for an OG
     ///         wallet only those past FREE_ALLOWANCE do.
-    uint256 public constant MINT_PRICE = 0.002 ether;
+    uint256 public constant MINT_PRICE = 0.003 ether;
 
     /// @notice Where withdraw() sends the mint proceeds. Immutable, like
     ///         everything else here: no owner, no rug surface.
@@ -166,7 +171,8 @@ contract ArtPlumber is ERC721 {
 
     uint256 public totalSupply;
 
-    /// @notice How many tokens each address has minted.
+    /// @notice How many tokens each address has minted. A counter for
+    ///         display and analytics only - it gates nothing.
     mapping(address => uint256) public mintedBy;
 
     /// @notice How much of its FREE_ALLOWANCE each address has used. Kept
@@ -223,13 +229,15 @@ contract ArtPlumber is ERC721 {
         return (quantity - _freeAllotment(wallet, quantity, signature)) * MINT_PRICE;
     }
 
-    /// @notice Mint `quantity` tokens (1-WALLET_LIMIT). An OG wallet's first
+    /// @notice Mint `quantity` tokens (1-MAX_PER_TX). An OG wallet's first
     ///         FREE_ALLOWANCE tokens are free and the rest cost MINT_PRICE
     ///         each; without a valid voucher every token costs MINT_PRICE.
+    ///         There is no per-wallet cap: mint as many as you like, up to
+    ///         MAX_PER_TX per transaction, until MAX_SUPPLY runs out.
     ///         Every token's seed - and therefore every color and the
     ///         plunger loadout - is fixed here and can never change.
-    /// @param  quantity  1-WALLET_LIMIT tokens; mintedBy[msg.sender] can
-    ///         never exceed WALLET_LIMIT across all calls.
+    /// @param  quantity  1-MAX_PER_TX tokens. Only the per-transaction gas
+    ///         guard and MAX_SUPPLY bound how much a wallet can mint.
     /// @param  signature 65-byte EIP-712 voucher (r||s||v) for msg.sender,
     ///         signed by `signer`, or empty to mint at full price. Reusable
     ///         by the same wallet until its free allowance is gone; useless
@@ -245,8 +253,7 @@ contract ArtPlumber is ERC721 {
         payable
         returns (uint256 firstId)
     {
-        require(quantity > 0 && quantity <= WALLET_LIMIT, "BAD_QUANTITY");
-        require(mintedBy[msg.sender] + quantity <= WALLET_LIMIT, "WALLET_LIMIT");
+        require(quantity > 0 && quantity <= MAX_PER_TX, "BAD_QUANTITY");
         uint256 freeNow = _freeAllotment(msg.sender, quantity, signature);
         require(msg.value == (quantity - freeNow) * MINT_PRICE, "WRONG_PRICE");
         require(totalSupply + quantity <= MAX_SUPPLY, "SOLD_OUT");

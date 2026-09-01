@@ -78,10 +78,10 @@ contract ArtPlumberTest {
         } catch Error(string memory reason) {
             require(eq(reason, "BAD_QUANTITY"), "zero quantity reason");
         }
-        try nft.mint{value: 9 * price}(11, sig) {
-            revert("quantity 11 should revert");
+        try nft.mint{value: 19 * price}(21, sig) {
+            revert("quantity 21 should revert");
         } catch Error(string memory reason) {
-            require(eq(reason, "BAD_QUANTITY"), "eleven quantity reason");
+            require(eq(reason, "BAD_QUANTITY"), "over-MAX_PER_TX reason");
         }
     }
 
@@ -254,28 +254,31 @@ contract ArtPlumberTest {
         require(eq(label(0xF), "None"), "none");
     }
 
-    function test_WalletLimit() public {
-        // one voucher, reused across mints: eligibility isn't consumed,
-        // the wallet cap is what stops the eleventh token
+    function test_NoPerWalletCap() public {
+        // one wallet, far past any old cap: only MAX_PER_TX bounds a single
+        // call, and nothing bounds the total
         bytes memory sig = voucher(address(this));
-        nft.mint{value: 0}(2, sig);
-        nft.mint{value: 8 * price}(8, sig);
-        require(nft.mintedBy(address(this)) == 10, "ten minted");
-        try nft.mint{value: price}(1, sig) {
-            revert("11th token should revert");
+        nft.mint{value: 18 * price}(20, sig); // 2 free + 18 paid
+        nft.mint{value: 20 * price}(20, sig);
+        nft.mint{value: 20 * price}(20, sig);
+        require(nft.mintedBy(address(this)) == 60, "sixty minted by one wallet");
+        require(nft.totalSupply() == 60, "supply");
+        require(nft.freeMintedBy(address(this)) == 2, "still only two free");
+        require(address(nft).balance == 58 * price, "58 paid, 2 free");
+    }
+
+    function test_MaxPerTxIsAGasGuardNotAnAllocation() public {
+        // the 21st token in one call is refused, but the same wallet may
+        // immediately send another full call
+        bytes memory sig = voucher(address(this));
+        try nft.mint{value: 19 * price}(21, sig) {
+            revert("21 in one call should revert");
         } catch Error(string memory reason) {
-            require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
+            require(eq(reason, "BAD_QUANTITY"), "wrong revert reason");
         }
-        // 9 + 2 must also fail: the cap is total, not per-tx
-        nft = new ArtPlumber(vm.addr(SIGNER_KEY), PAYOUT);
-        sig = voucher(address(this));
-        nft.mint{value: 7 * price}(9, sig);
-        try nft.mint{value: 2 * price}(2, sig) {
-            revert("9+2 should revert");
-        } catch Error(string memory reason) {
-            require(eq(reason, "WALLET_LIMIT"), "wrong revert reason");
-        }
-        require(nft.totalSupply() == 9, "supply unchanged by failed mint");
+        nft.mint{value: 18 * price}(20, sig);
+        nft.mint{value: 20 * price}(20, sig);
+        require(nft.mintedBy(address(this)) == 40, "40 across two calls");
     }
 
     function test_DisclaimerOnchain() public view {
@@ -311,9 +314,9 @@ contract ArtPlumberTest {
 
     function test_MintConstants() public view {
         require(nft.MAX_SUPPLY() == 2000, "collection size");
-        require(nft.WALLET_LIMIT() == 10, "per-wallet cap");
+        require(nft.MAX_PER_TX() == 20, "gas guard per transaction");
         require(nft.FREE_ALLOWANCE() == 2, "free tokens per OG wallet");
-        require(nft.MINT_PRICE() == 0.002 ether, "price per paid token");
+        require(nft.MINT_PRICE() == 0.003 ether, "price per paid token");
     }
 
     function test_OgFirstTwoTokensAreFree() public {
@@ -336,10 +339,10 @@ contract ArtPlumberTest {
         require(nft.freeMintedBy(address(this)) == 2, "free allowance stays spent");
     }
 
-    function test_OgFullTenCostsEightTokens() public {
-        nft.mint{value: 8 * price}(10, voucher(address(this)));
-        require(nft.mintedBy(address(this)) == 10, "ten minted");
-        require(address(nft).balance == 8 * price, "eight paid, two free");
+    function test_OgPaysForEverythingPastTheFreeTwo() public {
+        nft.mint{value: 18 * price}(20, voucher(address(this)));
+        require(nft.mintedBy(address(this)) == 20, "twenty minted");
+        require(address(nft).balance == 18 * price, "eighteen paid, two free");
     }
 
     function test_PublicWalletPaysForEveryToken() public {
@@ -348,10 +351,11 @@ contract ArtPlumberTest {
         } catch Error(string memory reason) {
             require(eq(reason, "WRONG_PRICE"), "public free-mint reason");
         }
-        nft.mint{value: 10 * price}(10, NO_VOUCHER);
-        require(nft.mintedBy(address(this)) == 10, "public wallet reaches the cap");
+        nft.mint{value: 20 * price}(20, NO_VOUCHER);
+        nft.mint{value: 20 * price}(20, NO_VOUCHER);
+        require(nft.mintedBy(address(this)) == 40, "no cap without a voucher either");
         require(nft.freeMintedBy(address(this)) == 0, "no free tokens without a voucher");
-        require(address(nft).balance == 10 * price, "all ten paid");
+        require(address(nft).balance == 40 * price, "all forty paid");
     }
 
     function test_FreeAllowanceSurvivesEarlierPaidMints() public {

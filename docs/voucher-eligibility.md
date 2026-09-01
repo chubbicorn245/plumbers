@@ -1,7 +1,7 @@
 # How voucher eligibility works
 
 Wallets that sent an Ethereum mainnet transaction before November 2021
-mint their first two plumbers free; everyone else pays 0.002 ETH per
+mint their first two plumbers free; everyone else pays 0.003 ETH per
 token. The voucher is what proves a wallet is in that first group — it
 is a **discount, not a gate**, and minting without one is a normal
 full-price mint, not an error. This document explains the whole
@@ -103,12 +103,12 @@ precompile.
 - **Replay-proof.** The domain pins chain id and contract address, so a
   voucher for one deployment verifies nowhere else — not on another
   chain, not on a redeploy, not on a copycat contract.
-- **Reusable but capped.** Vouchers aren't consumed; the same wallet can
-  reuse one across mints. That's fine because `freeMintedBy` and
-  `WALLET_LIMIT` are enforced on-chain — a voucher stops earning
-  discounts once the wallet's 2 free tokens are gone, and stops minting
-  entirely at 10. Eligibility and quantity are separate concerns, and
-  only the contract enforces quantity.
+- **Reusable but bounded.** Vouchers aren't consumed; the same wallet
+  can reuse one across mints. That's fine because `freeMintedBy` is
+  enforced on-chain — a voucher stops earning discounts once the
+  wallet's 2 free tokens are gone, and every token after that is full
+  price. There is no per-wallet cap, so a voucher's entire power is
+  those first two tokens.
 - **Fails soft.** An absent, malformed, forged, or borrowed voucher does
   not revert the mint. `_freeAllotment` simply returns 0 and the wallet
   is quoted full price. Since `msg.value` must match the quote exactly,
